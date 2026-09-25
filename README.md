@@ -22,6 +22,7 @@
 | [purchase_requisition.py](purchase_requisition.py) | `purchase_requisition` | Needs testing |
 | [approved_mfg_part_list.py](approved_mfg_part_list.py) | `approved_mfg_part_list` | Stable |
 | [bill_of_materials.py](bill_of_materials.py) | `bill_of_materials` | Stable |
+| [material_details.py](material_details.py) | `material_details` | New — needs testing |
 
 ---
 
@@ -280,6 +281,52 @@ BOM usage type is propagated through explosion — a production BOM (usage = 1) 
 | valid_from | STRING | Effective date for this revision (YYYYMMDD) |
 
 **SAP source tables:** MAST, STKO, STAS, STPO, MAKT
+
+---
+
+### material_details
+**Granularity:** One row per material + plant (MARC)
+
+Material master combined with plant planning parameters and valuation data. Covers general material attributes (type, group, weight, dimensions) alongside plant-level MRP settings (type, controller, lot sizing, procurement type) and standard/moving-average pricing.
+
+| Column | Type | Description |
+|--------|------|-------------|
+| material_number | STRING | SAP material number (leading zeros stripped) |
+| material_description | STRING | Material short text in English |
+| plant | STRING | Plant |
+| material_type | STRING | Material type code (ROH, HALB, FERT, HAWA, etc.) |
+| material_group | STRING | Material group / commodity code |
+| base_unit_of_measure | STRING | Base unit of measure |
+| division | STRING | Division (MARA.SPART) |
+| old_material_number | STRING | Legacy / predecessor material number |
+| creation_date | STRING | Material master creation date (YYYYMMDD) |
+| net_weight | DECIMAL(18,3) | Net weight per base unit |
+| gross_weight | DECIMAL(18,3) | Gross weight per base unit |
+| weight_unit | STRING | Unit of weight (KG, G, LB, etc.) |
+| volume | DECIMAL(18,3) | Volume per base unit |
+| volume_unit | STRING | Unit of volume (L, ML, CM3, etc.) |
+| manufacturer_part_number | STRING | Manufacturer own part number (MARA.MFRPN) |
+| profit_center | STRING | Profit center at plant level |
+| mrp_type | STRING | MRP planning type (PD, VB, ND, MO, etc.) |
+| mrp_controller | STRING | MRP controller / planner code |
+| lot_sizing_procedure | STRING | Lot sizing procedure (EX, FX, HB, etc.) |
+| procurement_type | STRING | E = in-house, F = external, X = both |
+| special_procurement_type | STRING | Special procurement key (subcontracting, phantom, etc.) |
+| plant_material_status | STRING | Plant-level material status; restricts transactions when set |
+| abc_indicator | STRING | ABC classification at plant level |
+| purchasing_group | STRING | Purchasing group at plant level |
+| planned_delivery_time_days | DECIMAL(5,0) | Planned delivery time in calendar days |
+| gr_processing_time_days | DECIMAL(5,0) | GR processing time in workdays |
+| safety_stock_qty | DECIMAL(18,3) | Safety stock level |
+| reorder_point | DECIMAL(18,3) | Reorder point quantity |
+| maximum_stock_level | DECIMAL(18,3) | Maximum stock level |
+| valuation_class | STRING | Valuation class (MBEW.BKLAS) |
+| price_control | STRING | S = standard price, V = moving average |
+| standard_price | DECIMAL(18,4) | Standard price per price unit |
+| moving_average_price | DECIMAL(18,4) | Moving average price per price unit |
+| price_unit | DECIMAL(18,3) | Price unit for valuation prices |
+
+**SAP source tables:** MARC, MARA, MAKT, MBEW
 
 ---
 

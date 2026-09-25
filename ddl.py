@@ -12,11 +12,13 @@
 # MAGIC | Table | Mirrors | Description |
 # MAGIC |-------|---------|-------------|
 # MAGIC | inventory | SAP MB52 | Stock balances by material, plant, storage location, and special stock type |
-# MAGIC | purchase_order | SAP ME2M | Purchase order and STO schedule lines |
+# MAGIC | purchase_order | SAP ME2M | Standard purchase order schedule lines (doc range 0004xxxxxx) |
+# MAGIC | stock_transfer | SAP ME2M | Internal stock transfer order schedule lines (doc range 0003xxxxxx) |
 # MAGIC | material_reservation | SAP MB25 | Material reservations and dependent requirements |
 # MAGIC | purchase_requisition | SAP ME5A | Purchase requisition items with PO and GR linkage |
 # MAGIC | approved_mfg_part_list | — | Approved Manufacturer Parts List |
 # MAGIC | bill_of_materials | — | Multi-level BOM explosion |
+# MAGIC | material_details | — | Material master + plant planning and valuation data |
 # MAGIC
 # MAGIC > **Note on surrogate keys:** Each table defines a `GENERATED ALWAYS AS IDENTITY` surrogate key.
 # MAGIC > These are preserved when loading via `INSERT INTO`. Notebooks that use `saveAsTable("overwrite")`
@@ -265,3 +267,49 @@
 # MAGIC
 # MAGIC )
 # MAGIC COMMENT 'Multi-level BOM explosion — one row per component at each level of the assembly hierarchy. Four deduplication layers applied: alt BOM selection, revision-letter dedup, same-qty position dedup, and item-number dedup. Source: median_hub_captured.sap (MAST, STKO, STAS, STPO, MAKT).'
+
+# COMMAND ----------
+
+# DBTITLE 1,material_details
+# MAGIC %sql
+# MAGIC CREATE TABLE IF NOT EXISTS hub_live_transformed.sap.material_details (
+# MAGIC
+# MAGIC     material_details_id             BIGINT          GENERATED ALWAYS AS IDENTITY   COMMENT 'Surrogate key — system-generated unique identifier for each material + plant record',
+# MAGIC
+# MAGIC     material_number                 STRING          COMMENT 'SAP material number (MARC.MATNR). Leading zeros removed for numeric values',
+# MAGIC     material_description            STRING          COMMENT 'Material short text in English (MAKT.MAKTX, SPRAS = E)',
+# MAGIC     plant                           STRING          COMMENT 'Plant where this material is managed (MARC.WERKS)',
+# MAGIC     material_type                   STRING          COMMENT 'Material type code (MARA.MTART): ROH = raw material, HALB = semi-finished, FERT = finished goods, HAWA = trading goods',
+# MAGIC     material_group                  STRING          COMMENT 'Material group / commodity code (MARA.MATKL)',
+# MAGIC     base_unit_of_measure            STRING          COMMENT 'Base unit of measure for all stock quantities and planning (MARA.MEINS)',
+# MAGIC     division                        STRING          COMMENT 'Division assigned to the material (MARA.SPART)',
+# MAGIC     old_material_number             STRING          COMMENT 'Legacy or predecessor material number (MARA.BISMT)',
+# MAGIC     creation_date                   STRING          COMMENT 'Date the material master record was first created (MARA.ERSDA, format YYYYMMDD)',
+# MAGIC     net_weight                      DECIMAL(18,3)   COMMENT 'Net weight of one base unit, excluding packaging (MARA.NTGEW)',
+# MAGIC     gross_weight                    DECIMAL(18,3)   COMMENT 'Gross weight of one base unit, including packaging (MARA.BRGEW)',
+# MAGIC     weight_unit                     STRING          COMMENT 'Unit of weight for net_weight and gross_weight (MARA.GEWEI): KG, G, LB, etc.',
+# MAGIC     volume                          DECIMAL(18,3)   COMMENT 'Volume of one base unit (MARA.VOLUM)',
+# MAGIC     volume_unit                     STRING          COMMENT 'Unit of volume (MARA.VOLEH): L, ML, CM3, etc.',
+# MAGIC     manufacturer_part_number        STRING          COMMENT 'Manufacturer own part number as stored on the material master (MARA.MFRPN)',
+# MAGIC     profit_center                   STRING          COMMENT 'Profit center assigned to this material at plant level (MARC.PRCTR)',
+# MAGIC     mrp_type                        STRING          COMMENT 'MRP planning procedure (MARC.DISMM): PD = MRP, VB = reorder point, ND = no planning, MO = manual',
+# MAGIC     mrp_controller                  STRING          COMMENT 'MRP controller / planner responsible for this material at this plant (MARC.DISPO)',
+# MAGIC     lot_sizing_procedure            STRING          COMMENT 'Lot sizing procedure for MRP (MARC.DISLS): EX = lot-for-lot, FX = fixed lot size, HB = replenish to max level',
+# MAGIC     procurement_type                STRING          COMMENT 'Procurement type (MARC.BESKZ): E = in-house production, F = external procurement, X = both',
+# MAGIC     special_procurement_type        STRING          COMMENT 'Special procurement key (MARC.SOBSL): controls subcontracting, consignment, phantom assembly, etc.',
+# MAGIC     plant_material_status           STRING          COMMENT 'Plant-specific material status (MARC.MMSTA); restricts certain transactions such as GR, GI, or PO creation when set',
+# MAGIC     abc_indicator                   STRING          COMMENT 'ABC classification at plant level (MARC.ABCIN): A = high value/volume, B = medium, C = low',
+# MAGIC     purchasing_group                STRING          COMMENT 'Purchasing group / buyer responsible for procuring this material at this plant (MARC.EKGRP)',
+# MAGIC     planned_delivery_time_days      DECIMAL(5,0)    COMMENT 'Planned delivery time from vendor in calendar days (MARC.PLIFZ)',
+# MAGIC     gr_processing_time_days         DECIMAL(5,0)    COMMENT 'Time in workdays to process a goods receipt into usable stock (MARC.WEBAZ)',
+# MAGIC     safety_stock_qty                DECIMAL(18,3)   COMMENT 'Safety stock level — MRP will not plan below this quantity (MARC.EISBE)',
+# MAGIC     reorder_point                   DECIMAL(18,3)   COMMENT 'Reorder point — MRP triggers a replenishment proposal when stock falls below this level (MARC.MINBE)',
+# MAGIC     maximum_stock_level             DECIMAL(18,3)   COMMENT 'Maximum stock level — target replenishment quantity for HB lot sizing (MARC.MABST)',
+# MAGIC     valuation_class                 STRING          COMMENT 'Valuation class controlling G/L account assignment for inventory postings (MBEW.BKLAS)',
+# MAGIC     price_control                   STRING          COMMENT 'Price control indicator (MBEW.VPRSV): S = standard price, V = moving average price',
+# MAGIC     standard_price                  DECIMAL(18,4)   COMMENT 'Standard price per price unit in local currency (MBEW.STPRS); used when price_control = S',
+# MAGIC     moving_average_price            DECIMAL(18,4)   COMMENT 'Moving average price per price unit in local currency (MBEW.VERPR); used when price_control = V',
+# MAGIC     price_unit                      DECIMAL(18,3)   COMMENT 'Price unit — the quantity basis for standard_price and moving_average_price (MBEW.PEINH)'
+# MAGIC
+# MAGIC )
+# MAGIC COMMENT 'Material master and plant planning data — one row per material per plant. Combines MARC plant data with MARA general data, MAKT descriptions, and MBEW valuation. Source: median_hub_captured.sap.'
