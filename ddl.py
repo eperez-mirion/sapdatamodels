@@ -70,9 +70,10 @@
 # MAGIC
 # MAGIC     purchase_order_id               BIGINT          GENERATED ALWAYS AS IDENTITY   COMMENT 'Surrogate key — system-generated unique identifier for each schedule line record',
 # MAGIC
-# MAGIC     purchasing_document_number      STRING          COMMENT 'Purchase order number (EKKO.EBELN). Leading zeros removed for numeric values',
+# MAGIC     purchasing_document_number      STRING          COMMENT 'Purchase order number (EKKO.EBELN). Leading zeros removed for numeric values. Range: 0004000000–0004999999',
 # MAGIC     purchasing_document_item        STRING          COMMENT 'Line item number within the purchase order (EKPO.EBELP). Leading zeros removed',
 # MAGIC     schedule_line_counter           STRING          COMMENT 'Delivery schedule line counter within the PO item (EKET.ETENR)',
+# MAGIC     purchasing_document_type        STRING          COMMENT 'SAP document type code (EKKO.BSART), e.g. NB = standard PO',
 # MAGIC     vendor_account_number           STRING          COMMENT 'SAP vendor account number (EKKO.LIFNR). Leading zeros removed for numeric values',
 # MAGIC     vendor_name                     STRING          COMMENT 'Vendor name from vendor master (LFA1.NAME1)',
 # MAGIC     material_number                 STRING          COMMENT 'SAP material number (EKPO.MATNR). Leading zeros removed for numeric values',
@@ -105,7 +106,48 @@
 # MAGIC     purchasing_organization         STRING          COMMENT 'Purchasing organization (EKKO.EKORG)'
 # MAGIC
 # MAGIC )
-# MAGIC COMMENT 'Purchase order and stock transfer order (STO) schedule lines. Mirrors SAP ME2M. Granularity: one row per schedule line (EKKO + EKPO + EKET). PO text block excluded — requires STXH/STXL aggregation. Source: median_hub_captured.sap.'
+# MAGIC COMMENT 'Standard purchase order schedule lines (document range 0004xxxxxx). Mirrors SAP ME2M. Granularity: one row per schedule line (EKKO + EKPO + EKET). PO text block excluded — requires STXH/STXL aggregation. Stock Transfer Orders are in the stock_transfer table. Source: median_hub_captured.sap.'
+
+# COMMAND ----------
+
+# DBTITLE 1,stock_transfer
+# MAGIC %sql
+# MAGIC CREATE TABLE IF NOT EXISTS hub_live_transformed.sap.stock_transfer (
+# MAGIC
+# MAGIC     stock_transfer_id               BIGINT          GENERATED ALWAYS AS IDENTITY   COMMENT 'Surrogate key — system-generated unique identifier for each schedule line record',
+# MAGIC
+# MAGIC     purchasing_document_number      STRING          COMMENT 'Stock transfer order number (EKKO.EBELN). Leading zeros removed. Range: 0003000000–0003999999',
+# MAGIC     purchasing_document_item        STRING          COMMENT 'Line item number within the STO (EKPO.EBELP). Leading zeros removed',
+# MAGIC     schedule_line_counter           STRING          COMMENT 'Delivery schedule line counter within the STO item (EKET.ETENR)',
+# MAGIC     purchasing_document_type        STRING          COMMENT 'SAP document type code (EKKO.BSART), e.g. UB = stock transfer order',
+# MAGIC     material_number                 STRING          COMMENT 'SAP material number (EKPO.MATNR). Leading zeros removed for numeric values',
+# MAGIC     material_description            STRING          COMMENT 'Material short text in English (MAKT.MAKTX, SPRAS = E)',
+# MAGIC     po_unit_of_measure              STRING          COMMENT 'Unit of measure for the ordered quantity (EKPO.MEINS)',
+# MAGIC     receiving_plant                 STRING          COMMENT 'Plant receiving the transferred stock (EKPO.WERKS)',
+# MAGIC     supplying_plant                 STRING          COMMENT 'Plant issuing / shipping the stock (EKPO.RESWK)',
+# MAGIC     material_group                  STRING          COMMENT 'Material group / commodity code (EKPO.MATKL)',
+# MAGIC     purchasing_document_date        STRING          COMMENT 'Date the STO was created (EKKO.BEDAT, format YYYYMMDD)',
+# MAGIC     item_delivery_date              STRING          COMMENT 'Requested delivery date for the schedule line (EKET.EINDT, format YYYYMMDD)',
+# MAGIC     statistics_delivery_date        STRING          COMMENT 'Statistical delivery date for reporting (EKET.SLFDT, format YYYYMMDD)',
+# MAGIC     local_currency                  STRING          COMMENT 'Local currency of the company code (T001.WAERS)',
+# MAGIC     po_quantity                     DECIMAL(18,3)   COMMENT 'Total ordered quantity at the STO item level (EKPO.MENGE)',
+# MAGIC     scheduled_quantity              DECIMAL(18,3)   COMMENT 'Quantity for this specific schedule line (EKET.MENGE)',
+# MAGIC     gr_quantity                     DECIMAL(18,3)   COMMENT 'Goods receipt quantity posted against this schedule line (EKET.WEMNG)',
+# MAGIC     quantity_to_be_delivered        DECIMAL(18,3)   COMMENT 'Outstanding open quantity: scheduled_quantity minus gr_quantity',
+# MAGIC     price_unit                      DECIMAL(18,3)   COMMENT 'Price unit — the quantity basis for the net price (EKPO.PEINH)',
+# MAGIC     net_price                       DECIMAL(18,4)   COMMENT 'Net price per price unit (EKPO.NETPR)',
+# MAGIC     total_value                     DECIMAL(18,2)   COMMENT 'Total line value: scheduled_quantity × net_price / price_unit',
+# MAGIC     gr_indicator                    STRING          COMMENT 'Goods receipt required indicator (EKPO.WEPOS): X = GR required',
+# MAGIC     item_category                   STRING          COMMENT 'STO item category (EKPO.PSTYP)',
+# MAGIC     deletion_indicator              STRING          COMMENT 'Deletion flag for the STO item (EKPO.LOEKZ): X = deleted',
+# MAGIC     delivery_completed_indicator    STRING          COMMENT 'Delivery completed flag (EKPO.ELIKZ): X = final delivery posted',
+# MAGIC     sto_status                      STRING          COMMENT 'Derived status: Deleted | Delivery Complete | Fully Received | Partially Received | Open',
+# MAGIC     purchasing_group                STRING          COMMENT 'Purchasing group / buyer code (EKKO.EKGRP)',
+# MAGIC     storage_location                STRING          COMMENT 'Destination storage location in the receiving plant (EKPO.LGORT)',
+# MAGIC     purchasing_organization         STRING          COMMENT 'Purchasing organization (EKKO.EKORG)'
+# MAGIC
+# MAGIC )
+# MAGIC COMMENT 'Stock transfer order schedule lines (document range 0003xxxxxx). Plant-to-plant internal transfers — no external vendor. Granularity: one row per schedule line (EKKO + EKPO + EKET). Standard Purchase Orders are in the purchase_order table. Source: median_hub_captured.sap.'
 
 # COMMAND ----------
 

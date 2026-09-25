@@ -16,7 +16,8 @@
 |----------|-------|--------|
 | [ddl.py](ddl.py) | Schema + all tables | Run first to create schema and table definitions |
 | [inventory.py](inventory.py) | `inventory` | Tested — ~99.9% match with OR data |
-| [purchase_document.py](purchase_document.py) | `purchase_order` | Tested — matches OR open PO data with expected filters |
+| [purchase_order.py](purchase_order.py) | `purchase_order` | Tested — matches OR open PO data; filtered to doc range 0004xxxxxx |
+| [stock_transfer.py](stock_transfer.py) | `stock_transfer` | Tested (DS) — filtered to doc range 0003xxxxxx |
 | [material_reservation.py](material_reservation.py) | `material_reservation` | Needs further testing — individual lines match, row count off |
 | [purchase_requisition.py](purchase_requisition.py) | `purchase_requisition` | Needs testing |
 | [approved_mfg_part_list.py](approved_mfg_part_list.py) | `approved_mfg_part_list` | Stable |
@@ -64,10 +65,11 @@ Inventory stock balances across all active stock types. Covers standard plant st
 ---
 
 ### purchase_order
-**Mirrors:** SAP ME2M (with additions)
+**Mirrors:** SAP ME2M
 **Granularity:** One row per schedule line (EKKO + EKPO + EKET)
+**Document range:** 0004000000–0004999999 (standard POs only)
 
-All purchase orders and stock transfer orders (STO). Expands each PO item to its delivery schedule lines. Includes a derived `po_status` field.
+Standard purchase orders expanded to delivery schedule lines. Includes a derived `po_status` field and `purchasing_document_type` (BSART) for future merging with `stock_transfer`.
 
 > **Known gap:** PO text block excluded — requires STXH/STXL aggregation not yet available.
 > **Open item:** `line_creation_date` — EKPO.CREATIONDATE unpopulated in current extraction.
@@ -77,6 +79,7 @@ All purchase orders and stock transfer orders (STO). Expands each PO item to its
 | purchasing_document_number | STRING | PO number (leading zeros stripped) |
 | purchasing_document_item | STRING | PO item number |
 | schedule_line_counter | STRING | Schedule line counter within item |
+| purchasing_document_type | STRING | SAP document type (e.g. NB = standard PO) |
 | vendor_account_number | STRING | Vendor number (leading zeros stripped) |
 | vendor_name | STRING | Vendor name |
 | material_number | STRING | Material number (leading zeros stripped) |
@@ -109,6 +112,49 @@ All purchase orders and stock transfer orders (STO). Expands each PO item to its
 | purchasing_organization | STRING | Purchasing organization |
 
 **SAP source tables:** EKKO, EKPO, EKET, LFA1, T001, MAKT
+
+---
+
+### stock_transfer
+**Mirrors:** SAP ME2M (filtered to STO range)
+**Granularity:** One row per schedule line (EKKO + EKPO + EKET)
+**Document range:** 0003000000–0003999999 (stock transfers only)
+
+Internal plant-to-plant stock transfer orders. No external vendor — LFA1 not joined. Includes `receiving_plant` (EKPO.WERKS), `supplying_plant` (EKPO.RESWK), and `purchasing_document_type` (BSART) for future merging with `purchase_order`.
+
+| Column | Type | Description |
+|--------|------|-------------|
+| purchasing_document_number | STRING | STO document number (leading zeros stripped) |
+| purchasing_document_item | STRING | STO item number |
+| schedule_line_counter | STRING | Schedule line counter |
+| purchasing_document_type | STRING | SAP document type (e.g. UB = stock transfer) |
+| material_number | STRING | Material number (leading zeros stripped) |
+| material_description | STRING | Material short text |
+| po_unit_of_measure | STRING | Unit of measure |
+| receiving_plant | STRING | Plant receiving the stock (EKPO.WERKS) |
+| supplying_plant | STRING | Plant issuing the stock (EKPO.RESWK) |
+| material_group | STRING | Material group |
+| purchasing_document_date | STRING | STO creation date (YYYYMMDD) |
+| item_delivery_date | STRING | Schedule line delivery date (YYYYMMDD) |
+| statistics_delivery_date | STRING | Statistical delivery date (YYYYMMDD) |
+| local_currency | STRING | Company code local currency |
+| po_quantity | DECIMAL(18,3) | Total ordered quantity at item level |
+| scheduled_quantity | DECIMAL(18,3) | Schedule line quantity |
+| gr_quantity | DECIMAL(18,3) | Goods receipt quantity |
+| quantity_to_be_delivered | DECIMAL(18,3) | scheduled_quantity − gr_quantity |
+| price_unit | DECIMAL(18,3) | Price basis quantity |
+| net_price | DECIMAL(18,4) | Net price per price unit |
+| total_value | DECIMAL(18,2) | scheduled_quantity × net_price / price_unit |
+| gr_indicator | STRING | GR required: X = yes |
+| item_category | STRING | Item category |
+| deletion_indicator | STRING | X = deleted |
+| delivery_completed_indicator | STRING | X = final delivery |
+| sto_status | STRING | Deleted / Delivery Complete / Fully Received / Partially Received / Open |
+| purchasing_group | STRING | Buyer code |
+| storage_location | STRING | Destination storage location |
+| purchasing_organization | STRING | Purchasing organization |
+
+**SAP source tables:** EKKO, EKPO, EKET, T001, MAKT
 
 ---
 
