@@ -19,8 +19,8 @@
 | [purchase_document.py](purchase_document.py) | `purchase_order` | Tested — matches OR open PO data with expected filters |
 | [material_reservation.py](material_reservation.py) | `material_reservation` | Needs further testing — individual lines match, row count off |
 | [purchase_requisition.py](purchase_requisition.py) | `purchase_requisition` | Needs testing |
-| [approved_mfg_part_list.py](approved_mfg_part_list.py) | `sap_mpn` | Stable |
-| [bill_of_materials.py](bill_of_materials.py) | `sap_bom` | Stable |
+| [approved_mfg_part_list.py](approved_mfg_part_list.py) | `approved_mfg_part_list` | Stable |
+| [bill_of_materials.py](bill_of_materials.py) | `bill_of_materials` | Stable |
 
 ---
 
@@ -185,7 +185,7 @@ Purchase requisition items with linked PO number, net price, and total GR quanti
 
 ---
 
-### sap_mpn
+### approved_mfg_part_list
 **Granularity:** One row per approved manufacturer per internal material per plant
 
 Approved Manufacturer Parts List — maps internal Mirion materials to their approved external manufacturer part numbers. Rows with NULL plant are excluded.
@@ -206,7 +206,7 @@ Approved Manufacturer Parts List — maps internal Mirion materials to their app
 
 ---
 
-### sap_bom
+### bill_of_materials
 **Granularity:** One row per component at each level of the BOM hierarchy
 
 Multi-level BOM explosion up to 10 levels deep. Four deduplication layers are applied: alternative BOM selection (lowest alt number), revision-letter dedup (highest letter per base number), same-qty position dedup (latest valid_from), and item-number dedup (highest item node / STLKN).

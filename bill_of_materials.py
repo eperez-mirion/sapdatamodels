@@ -414,7 +414,7 @@ display(result)
 result.write \
     .format("delta") \
     .mode("overwrite") \
-    .saveAsTable("hub_live_transformed.sap.sap_bom")
+    .saveAsTable("hub_live_transformed.sap.bill_of_materials")
 
 # COMMAND ----------
 

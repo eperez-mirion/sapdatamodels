@@ -15,8 +15,8 @@
 # MAGIC | purchase_order | SAP ME2M | Purchase order and STO schedule lines |
 # MAGIC | material_reservation | SAP MB25 | Material reservations and dependent requirements |
 # MAGIC | purchase_requisition | SAP ME5A | Purchase requisition items with PO and GR linkage |
-# MAGIC | sap_mpn | — | Approved Manufacturer Parts List |
-# MAGIC | sap_bom | — | Multi-level BOM explosion |
+# MAGIC | approved_mfg_part_list | — | Approved Manufacturer Parts List |
+# MAGIC | bill_of_materials | — | Multi-level BOM explosion |
 # MAGIC
 # MAGIC > **Note on surrogate keys:** Each table defines a `GENERATED ALWAYS AS IDENTITY` surrogate key.
 # MAGIC > These are preserved when loading via `INSERT INTO`. Notebooks that use `saveAsTable("overwrite")`
@@ -176,11 +176,11 @@
 
 # COMMAND ----------
 
-# DBTITLE 1,sap_mpn
+# DBTITLE 1,approved_mfg_part_list
 # MAGIC %sql
-# MAGIC CREATE TABLE IF NOT EXISTS hub_live_transformed.sap.sap_mpn (
+# MAGIC CREATE TABLE IF NOT EXISTS hub_live_transformed.sap.approved_mfg_part_list (
 # MAGIC
-# MAGIC     sap_mpn_id                      BIGINT          GENERATED ALWAYS AS IDENTITY   COMMENT 'Surrogate key — system-generated unique identifier for each approved manufacturer record',
+# MAGIC     approved_mfg_part_list_id       BIGINT          GENERATED ALWAYS AS IDENTITY   COMMENT 'Surrogate key — system-generated unique identifier for each approved manufacturer record',
 # MAGIC
 # MAGIC     mpn_number                      STRING          COMMENT 'Manufacturer part number in SAP — the EMATN field from AMPL, leading zeros stripped for numeric values',
 # MAGIC     material_number                 STRING          COMMENT 'Internal Mirion material number (AMPL.BMATN if populated, otherwise AMPL.EMATN). Leading zeros stripped',
@@ -197,11 +197,11 @@
 
 # COMMAND ----------
 
-# DBTITLE 1,sap_bom
+# DBTITLE 1,bill_of_materials
 # MAGIC %sql
-# MAGIC CREATE TABLE IF NOT EXISTS hub_live_transformed.sap.sap_bom (
+# MAGIC CREATE TABLE IF NOT EXISTS hub_live_transformed.sap.bill_of_materials (
 # MAGIC
-# MAGIC     sap_bom_id                  BIGINT          GENERATED ALWAYS AS IDENTITY   COMMENT 'Surrogate key — system-generated unique identifier for each BOM explosion row',
+# MAGIC     bill_of_materials_id        BIGINT          GENERATED ALWAYS AS IDENTITY   COMMENT 'Surrogate key — system-generated unique identifier for each BOM explosion row',
 # MAGIC
 # MAGIC     top_material                STRING          COMMENT 'Top-level assembly material number at the root of this explosion path',
 # MAGIC     top_plant                   STRING          COMMENT 'Plant of the top-level assembly. All sub-assembly lookups are constrained to this plant',

@@ -104,4 +104,4 @@ display(result)
 result.write \
     .format("delta") \
     .mode("overwrite") \
-    .saveAsTable("hub_live_transformed.sap.sap_mpn")
+    .saveAsTable("hub_live_transformed.sap.approved_mfg_part_list")
