@@ -22,6 +22,7 @@
 # MAGIC | material_usage | — | Full goods movement history (MSEG + MKPF) |
 # MAGIC | vendor_master | — | Vendor address, contact, email, and purchasing org data |
 # MAGIC | material_last_movement | — | Most recent goods movement date per material + plant |
+# MAGIC | vendor_otd | — | Vendor on-time delivery by PO schedule line |
 # MAGIC
 # MAGIC > **Note on surrogate keys:** Each table defines a `GENERATED ALWAYS AS IDENTITY` surrogate key.
 # MAGIC > These are preserved when loading via `INSERT INTO`. Notebooks that use `saveAsTable("overwrite")`
@@ -409,3 +410,39 @@
 # MAGIC
 # MAGIC )
 # MAGIC COMMENT 'Most recent goods movement per material per plant — one row per MATNR + WERKS combination. Derived from MSEG + MKPF using a window function. days_since_last_movement reflects the age of the last activity as of the last notebook run. Source: median_hub_captured.sap.'
+
+# COMMAND ----------
+
+# DBTITLE 1,vendor_otd
+# MAGIC %sql
+# MAGIC CREATE TABLE IF NOT EXISTS hub_live_transformed.sap.vendor_otd (
+# MAGIC
+# MAGIC     vendor_otd_id                   BIGINT          GENERATED ALWAYS AS IDENTITY   COMMENT 'Surrogate key — system-generated unique identifier for each PO schedule line record',
+# MAGIC
+# MAGIC     purchasing_document_number      STRING          COMMENT 'Purchase order number (EKKO.EBELN). Leading zeros removed. Range: 0004000000–0004999999',
+# MAGIC     purchasing_document_item        STRING          COMMENT 'PO line item number (EKPO.EBELP). Leading zeros removed',
+# MAGIC     schedule_line_counter           STRING          COMMENT 'Delivery schedule line counter within the PO item (EKET.ETENR)',
+# MAGIC     purchasing_document_type        STRING          COMMENT 'SAP document type code (EKKO.BSART), e.g. NB = standard PO',
+# MAGIC     vendor_account_number           STRING          COMMENT 'SAP vendor account number (EKKO.LIFNR). Leading zeros removed',
+# MAGIC     vendor_name                     STRING          COMMENT 'Vendor name from vendor master (LFA1.NAME1)',
+# MAGIC     material_number                 STRING          COMMENT 'SAP material number (EKPO.MATNR). Leading zeros removed',
+# MAGIC     material_description            STRING          COMMENT 'Material short text (MAKT.MAKTX if MATNR is set, otherwise EKPO.TXZ01 free-text description)',
+# MAGIC     material_group                  STRING          COMMENT 'Material group / commodity code (EKPO.MATKL)',
+# MAGIC     plant                           STRING          COMMENT 'Receiving plant (EKPO.WERKS)',
+# MAGIC     purchasing_group                STRING          COMMENT 'Purchasing group / buyer code (EKKO.EKGRP)',
+# MAGIC     purchasing_organization         STRING          COMMENT 'Purchasing organization (EKKO.EKORG)',
+# MAGIC     purchasing_document_date        STRING          COMMENT 'Date the PO was created (EKKO.BEDAT, format YYYYMMDD)',
+# MAGIC     scheduled_delivery_date         STRING          COMMENT 'Requested delivery date for this schedule line (EKET.EINDT, format YYYYMMDD)',
+# MAGIC     statistics_delivery_date        STRING          COMMENT 'Statistical delivery date for reporting (EKET.SLFDT, format YYYYMMDD)',
+# MAGIC     scheduled_quantity              DECIMAL(18,3)   COMMENT 'Quantity expected on this delivery schedule line (EKET.MENGE)',
+# MAGIC     total_gr_qty                    DECIMAL(18,3)   COMMENT 'Net goods receipt quantity against this PO item: receipts (SHKZG=S) minus reversals and returns (SHKZG=H). Derived from EKBE where BEWTP=E',
+# MAGIC     open_quantity                   DECIMAL(18,3)   COMMENT 'Quantity still outstanding: scheduled_quantity minus total_gr_qty',
+# MAGIC     first_gr_date                   STRING          COMMENT 'Posting date of the first goods receipt posted against this PO item (format YYYYMMDD). NULL if no GR yet',
+# MAGIC     last_gr_date                    STRING          COMMENT 'Posting date of the most recent goods receipt against this PO item (format YYYYMMDD). NULL if no GR yet',
+# MAGIC     gr_document_count               INT             COMMENT 'Number of distinct GR accounting documents posted against this PO item',
+# MAGIC     delivered_on_time               BOOLEAN         COMMENT 'True = first GR posted on or before scheduled_delivery_date; False = GR was late; NULL = not yet received',
+# MAGIC     days_early_late                 INT             COMMENT 'scheduled_delivery_date minus first_gr_date in calendar days. Positive = delivered early, negative = delivered late, NULL = not yet received',
+# MAGIC     otd_status                      STRING          COMMENT 'Derived delivery status: On Time | Late | Overdue (no GR and scheduled date has passed) | Open (no GR and scheduled date is in the future)'
+# MAGIC
+# MAGIC )
+# MAGIC COMMENT 'Vendor on-time delivery — one row per PO delivery schedule line (EKET). EKBE GR history is aggregated per PO item and joined to schedule lines for OTD calculation. Standard POs only (doc range 0004xxxxxx). STOs excluded. Source: median_hub_captured.sap.'

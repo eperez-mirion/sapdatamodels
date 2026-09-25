@@ -26,6 +26,7 @@
 | [material_usage.py](material_usage.py) | `material_usage` | New — needs testing |
 | [vendor_master.py](vendor_master.py) | `vendor_master` | New — needs testing; merges vendor emails (ADR6) |
 | [material_last_movement.py](material_last_movement.py) | `material_last_movement` | New — needs testing |
+| [vendor_otd.py](vendor_otd.py) | `vendor_otd` | New — needs testing |
 
 ---
 
@@ -428,6 +429,44 @@ Most recent goods movement per material per plant. Useful for slow-moving invent
 | days_since_last_movement | INT | Days since last_movement_date as of the last notebook run |
 
 **SAP source tables:** MSEG, MKPF, MAKT, MARA
+
+---
+
+### vendor_otd
+**Mirrors:** SAP ME2M + GR history
+**Granularity:** One row per PO delivery schedule line (EKET)
+**Document range:** 0004000000–0004999999 (standard POs only; STOs excluded)
+
+Vendor on-time delivery by PO schedule line. GR history from EKBE is aggregated per PO item (net of reversals) and joined to schedule lines for OTD calculation. `days_early_late` is positive when the vendor delivered early and negative when late.
+
+| Column | Type | Description |
+|--------|------|-------------|
+| purchasing_document_number | STRING | PO number (leading zeros stripped) |
+| purchasing_document_item | STRING | PO item number (leading zeros stripped) |
+| schedule_line_counter | STRING | Schedule line counter |
+| purchasing_document_type | STRING | SAP document type (e.g. NB) |
+| vendor_account_number | STRING | Vendor number (leading zeros stripped) |
+| vendor_name | STRING | Vendor name |
+| material_number | STRING | Material number (leading zeros stripped) |
+| material_description | STRING | Material description |
+| material_group | STRING | Material group |
+| plant | STRING | Receiving plant |
+| purchasing_group | STRING | Buyer code |
+| purchasing_organization | STRING | Purchasing organization |
+| purchasing_document_date | STRING | PO creation date (YYYYMMDD) |
+| scheduled_delivery_date | STRING | Requested delivery date (YYYYMMDD) |
+| statistics_delivery_date | STRING | Statistical delivery date (YYYYMMDD) |
+| scheduled_quantity | DECIMAL(18,3) | Schedule line quantity |
+| total_gr_qty | DECIMAL(18,3) | Net GR quantity (receipts minus reversals) |
+| open_quantity | DECIMAL(18,3) | scheduled_quantity − total_gr_qty |
+| first_gr_date | STRING | Date of first GR posted (YYYYMMDD); NULL if none |
+| last_gr_date | STRING | Date of most recent GR (YYYYMMDD); NULL if none |
+| gr_document_count | INT | Number of distinct GR documents |
+| delivered_on_time | BOOLEAN | True = on time; False = late; NULL = not yet received |
+| days_early_late | INT | Positive = early, negative = late, NULL = open |
+| otd_status | STRING | On Time \| Late \| Overdue \| Open |
+
+**SAP source tables:** EKET, EKKO, EKPO, EKBE, LFA1, MAKT
 
 ---
 
