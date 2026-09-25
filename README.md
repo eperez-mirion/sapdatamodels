@@ -12,21 +12,36 @@
 
 ## Notebooks
 
-| Notebook | Table | Status |
-|----------|-------|--------|
-| [ddl.py](ddl.py) | Schema + all tables | Run first to create schema and table definitions |
-| [inventory.py](inventory.py) | `inventory` | Tested — ~99.9% match with OR data |
-| [purchase_order.py](purchase_order.py) | `purchase_order` | Tested — matches OR open PO data; filtered to doc range 0004xxxxxx |
-| [stock_transfer.py](stock_transfer.py) | `stock_transfer` | Tested (DS) — filtered to doc range 0003xxxxxx |
-| [material_reservation.py](material_reservation.py) | `material_reservation` | Needs further testing — individual lines match, row count off |
-| [purchase_requisition.py](purchase_requisition.py) | `purchase_requisition` | Needs testing |
-| [approved_mfg_part_list.py](approved_mfg_part_list.py) | `approved_mfg_part_list` | Stable |
-| [bill_of_materials.py](bill_of_materials.py) | `bill_of_materials` | Stable |
-| [material_details.py](material_details.py) | `material_details` | New — needs testing |
-| [material_usage.py](material_usage.py) | `material_usage` | New — needs testing |
-| [vendor_master.py](vendor_master.py) | `vendor_master` | New — needs testing; merges vendor emails (ADR6) |
-| [material_last_movement.py](material_last_movement.py) | `material_last_movement` | New — needs testing |
-| [vendor_otd.py](vendor_otd.py) | `vendor_otd` | New — needs testing |
+| Notebook | Table | Description | Status |
+|----------|-------|-------------|--------|
+| [ddl.py](ddl.py) | Schema + all tables | Creates the hub_live_transformed.sap schema and all table definitions | Run first |
+| [inventory.py](inventory.py) | `inventory` | Stock balances by material, plant, storage location, and special stock type | Tested — ~99.9% match with OR data |
+| [purchase_order.py](purchase_order.py) | `purchase_order` | Purchase order schedule lines by vendor, material, and schedule line | Tested — matches OR open PO data |
+| [stock_transfer.py](stock_transfer.py) | `stock_transfer` | Internal stock transfer order lines by material and plant | Tested (DS) |
+| [material_reservation.py](material_reservation.py) | `material_reservation` | Material reservations and dependent requirements by reservation line | Needs further testing — row count off |
+| [purchase_requisition.py](purchase_requisition.py) | `purchase_requisition` | Purchase requisition items with linked PO and GR quantities | Needs testing |
+| [approved_mfg_part_list.py](approved_mfg_part_list.py) | `approved_mfg_part_list` | Approved manufacturer parts by material and plant | Stable |
+| [bill_of_materials.py](bill_of_materials.py) | `bill_of_materials` | Multi-level BOM explosion by material assembly hierarchy | Stable |
+| [material_details.py](material_details.py) | `material_details` | Material master and plant planning data by material and plant | New — needs testing |
+| [material_usage.py](material_usage.py) | `material_usage` | Full goods movement history by material document line item | New — needs testing |
+| [vendor_master.py](vendor_master.py) | `vendor_master` | Vendor address, contact, and purchasing org data by vendor | New — needs testing |
+| [material_last_movement.py](material_last_movement.py) | `material_last_movement` | Most recent goods movement date by material and plant | New — needs testing |
+| [vendor_otd.py](vendor_otd.py) | `vendor_otd` | Vendor on-time delivery scored by PO schedule line | New — needs testing |
+| **— Dimension Tables —** | | | |
+| [material_class.py](material_class.py) | `material_class` | Dimension table: material class by material type and procurement type | New — needs testing |
+| [mirion_customer_numbers.py](mirion_customer_numbers.py) | `mirion_customer_numbers` | Dimension table: Mirion internal customer accounts with standardized site labels | New — needs testing |
+| [mirion_vendor_numbers.py](mirion_vendor_numbers.py) | `mirion_vendor_numbers` | Dimension table: Mirion internal vendor accounts with standardized site labels | New — needs testing |
+| [movement_type.py](movement_type.py) | `movement_type` | Dimension table: movement type codes with plain-language descriptions and breakdown categories | New — needs testing |
+| [payment_terms.py](payment_terms.py) | `payment_terms` | Dimension table: payment terms keys with English descriptions | New — needs testing |
+| [purchasing_groups.py](purchasing_groups.py) | `purchasing_groups` | Dimension table: purchasing group codes and buyer names | New — needs testing |
+| [so_document_type.py](so_document_type.py) | `so_document_type` | Dimension table: sales order document type codes with Mirion order type classification | New — needs testing |
+| [so_item_category.py](so_item_category.py) | `so_item_category` | Dimension table: sales order item category codes with Mirion billing type classification | New — needs testing |
+| [so_reject_codes.py](so_reject_codes.py) | `so_reject_codes` | Dimension table: sales order rejection reason codes with Mirion status classification | New — needs testing |
+| [storage_locations.py](storage_locations.py) | `storage_locations` | Dimension table: storage location codes and descriptions per NA Tech plant | New — needs testing |
+| [delivery_blocks.py](delivery_blocks.py) | `delivery_blocks` | Dimension table: sales order delivery block codes with descriptions | New — needs testing |
+| [billing_blocks.py](billing_blocks.py) | `billing_blocks` | Dimension table: sales order billing block codes with descriptions | New — needs testing |
+| [profit_center.py](profit_center.py) | `profit_center` | Dimension table: profit centers with site, department, and top-level hierarchy rollup | New — needs testing |
+| [cost_center.py](cost_center.py) | `cost_center` | Dimension table: cost centers with controlling area, validity periods, responsible person, and department | New — needs testing |
 
 ---
 
@@ -437,7 +452,13 @@ Most recent goods movement per material per plant. Useful for slow-moving invent
 **Granularity:** One row per PO delivery schedule line (EKET)
 **Document range:** 0004000000–0004999999 (standard POs only; STOs excluded)
 
-Vendor on-time delivery by PO schedule line. GR history from EKBE is aggregated per PO item (net of reversals) and joined to schedule lines for OTD calculation. `days_early_late` is positive when the vendor delivered early and negative when late.
+Vendor on-time delivery by PO schedule line. EKBE GR events are matched to EKET schedule lines using a **cumulative quantity threshold** approach to correctly handle partial deliveries.
+
+Schedule lines are sorted by due date ascending and assigned a running cumulative scheduled quantity (`cum_sched_qty`). GR events are filtered to positive receipts only (BEWTP='E', SHKZG='S'), sorted by posting date ascending, and assigned a running cumulative received quantity (`cum_gr_qty`). Each schedule line is matched to the first GR event where `cum_gr_qty >= cum_sched_qty` — the **completion event** for that line.
+
+A schedule line scores as Open or Overdue until its full scheduled quantity has been cumulatively received. Partial deliveries do not score the line. The `gr_date` is the posting date of the completing GR, and `days_early_late` is positive when the vendor delivered early and negative when late.
+
+Note: EKBE.ETENS (the SAP schedule line link field) is unpopulated in this extraction, so cumulative matching is used as the best available approach.
 
 | Column | Type | Description |
 |--------|------|-------------|
@@ -456,17 +477,252 @@ Vendor on-time delivery by PO schedule line. GR history from EKBE is aggregated 
 | purchasing_document_date | STRING | PO creation date (YYYYMMDD) |
 | scheduled_delivery_date | STRING | Requested delivery date (YYYYMMDD) |
 | statistics_delivery_date | STRING | Statistical delivery date (YYYYMMDD) |
-| scheduled_quantity | DECIMAL(18,3) | Schedule line quantity |
-| total_gr_qty | DECIMAL(18,3) | Net GR quantity (receipts minus reversals) |
-| open_quantity | DECIMAL(18,3) | scheduled_quantity − total_gr_qty |
-| first_gr_date | STRING | Date of first GR posted (YYYYMMDD); NULL if none |
-| last_gr_date | STRING | Date of most recent GR (YYYYMMDD); NULL if none |
-| gr_document_count | INT | Number of distinct GR documents |
-| delivered_on_time | BOOLEAN | True = on time; False = late; NULL = not yet received |
+| scheduled_quantity | DECIMAL(18,3) | Schedule line quantity (EKET.MENGE) |
+| gr_quantity | DECIMAL(18,3) | GR quantity for this schedule line as maintained by SAP (EKET.WEMNG) |
+| open_quantity | DECIMAL(18,3) | scheduled_quantity − gr_quantity |
+| gr_date | STRING | Posting date of the rank-matched GR for this line (YYYYMMDD); NULL if no matching GR |
+| gr_document_number | STRING | Accounting document number of the matched GR; NULL if no matching GR |
+| delivered_on_time | BOOLEAN | True = gr_date on or before scheduled date; False = late; NULL = not yet received |
 | days_early_late | INT | Positive = early, negative = late, NULL = open |
 | otd_status | STRING | On Time \| Late \| Overdue \| Open |
 
 **SAP source tables:** EKET, EKKO, EKPO, EKBE, LFA1, MAKT
+
+---
+
+## Dimension Tables
+
+### material_class
+**Mirrors:** Custom Mirion classification (no direct SAP equivalent)
+**Granularity:** One row per material type + procurement type combination
+
+Maps every combination of SAP material type (MARA.MTART) and procurement type (MARC.BESKZ) to a Mirion business classification. Built by cross joining distinct MTART values from MARA with distinct BESKZ values from MARC. Material types ZONT, ZHER, and HERS are excluded as inactive/legacy. Use this table to classify materials in reports without repeating the CASE logic.
+
+| Column | Type | Description |
+|--------|------|-------------|
+| material_type | STRING | SAP material type code (MARA.MTART) |
+| procurement_type | STRING | SAP procurement type code (MARC.BESKZ): F = external, E = in-house, X = both, blank = not set |
+| material_class | STRING | Mirion classification: Tradable/Resale \| Raw \| Semi-FG \| FG \| Operating/Packing Supplies \| Service \| Non-Stock Material \| Unknown |
+
+**SAP source tables:** MARA, MARC
+
+---
+
+### mirion_customer_numbers
+**Mirrors:** Custom Mirion filter (no direct SAP equivalent)
+**Granularity:** One row per Mirion-affiliated customer account (KNA1)
+
+SAP customer accounts whose name contains Mirion, Canberra, Sun Nuclear, or Capintec — the internal intercompany customer accounts used across NA Tech sites. Deleted (LOEVM), blocked (SPERR), BLK3 test accounts, and French entity KUNNRs are excluded. `short_name` maps each KUNNR to a standardized Mirion site label for use in reports; accounts not in the mapping show TBD and should be reviewed.
+
+| Column | Type | Description |
+|--------|------|-------------|
+| customer_number | STRING | SAP customer account number (leading zeros stripped) |
+| customer_name | STRING | Customer name as stored in SAP |
+| city | STRING | City from customer master |
+| short_name | STRING | Mirion standardized site label (e.g. MIRION (MERIDEN)); TBD if not mapped |
+
+**SAP source tables:** KNA1
+
+---
+
+### mirion_vendor_numbers
+**Mirrors:** Custom Mirion filter (no direct SAP equivalent)
+**Granularity:** One row per Mirion-affiliated vendor account (LFA1)
+
+SAP vendor accounts whose name contains Mirion, Canberra, or Capintec — the internal intercompany vendor accounts used across NA Tech sites. `short_name` maps each LIFNR to a standardized Mirion site label; accounts not in the mapping show TBD and should be reviewed. Note: LIFNR values are a mix of numeric (e.g. 0000103998) and alphanumeric (e.g. V4020, R103998) — leading zeros are stripped only from fully numeric accounts.
+
+| Column | Type | Description |
+|--------|------|-------------|
+| vendor_number | STRING | SAP vendor account number; leading zeros stripped for numeric accounts, alphanumeric kept as-is |
+| vendor_name | STRING | Vendor name as stored in SAP |
+| country | STRING | Country key from vendor master |
+| short_name | STRING | Mirion standardized site label (e.g. MIRION (MERIDEN)); TBD if not mapped |
+
+**SAP source tables:** LFA1
+
+---
+
+### movement_type
+**Mirrors:** SAP T156 / T156T
+**Granularity:** One row per movement type code (BWART), NA Tech active types only
+
+SAP movement type reference table combining the standard SAP description (T156T.BTEXT) with Mirion plain-language descriptions and a high-level breakdown category. Only movement types with a Mirion description are included — these represent the types active in NA Tech. To include all SAP types, remove the `movement_type_text IS NOT NULL` filter in the notebook.
+
+| Column | Type | Description |
+|--------|------|-------------|
+| movement_type | STRING | SAP movement type code (e.g. 101, 261) |
+| sap_description | STRING | SAP standard English description from T156T |
+| movement_type_text | STRING | Mirion plain-language description |
+| breakdown | STRING | Goods Receipt \| Goods Issue \| Transfer \| Scrap \| Adjustment |
+
+**SAP source tables:** T156, T156T
+
+---
+
+### payment_terms
+**Mirrors:** SAP T052 / T052U
+**Granularity:** One row per payment terms key (ZTERM)
+
+Payment terms reference table for decoding ZTERM on purchase orders, vendor master records, and AP documents. Joins the configuration table (T052) with the English language description (T052U).
+
+| Column | Type | Description |
+|--------|------|-------------|
+| payment_terms | STRING | SAP payment terms key (e.g. N030, Z001) |
+| description | STRING | English description of the payment terms |
+| baseline_date | STRING | Baseline date indicator for due date calculation |
+
+**SAP source tables:** T052, T052U
+
+---
+
+### purchasing_groups
+**Mirrors:** SAP T024
+**Granularity:** One row per purchasing group (EKGRP)
+
+Simple lookup table mapping purchasing group codes to buyer names. Used to decode EKGRP on purchase orders and purchase requisitions.
+
+| Column | Type | Description |
+|--------|------|-------------|
+| purchasing_group | STRING | SAP purchasing group code (e.g. M01, P02) |
+| buyer_name | STRING | Name of the buyer or purchasing group |
+
+**SAP source tables:** T024
+
+---
+
+### so_document_type
+**Mirrors:** SAP TVAK / TVAKT
+**Granularity:** One row per sales document type (AUART)
+
+Sales order document type reference table combining the SAP description with a Mirion `order_type` classification (Standard, Inquiry, Consignment, Customer Loan, Quotation, Return, Warranty/Repair). Document types not in the classification default to Unused.
+
+| Column | Type | Description |
+|--------|------|-------------|
+| sales_doc_type | STRING | SAP sales document type code (e.g. ZOR, ZRE) |
+| description | STRING | English description from TVAKT |
+| order_type | STRING | Mirion classification: Standard \| Inquiry \| Consignment \| Customer Loan \| Quotation \| Return \| Warranty/Repair \| Unused |
+
+**SAP source tables:** TVAK, TVAKT
+
+---
+
+### so_item_category
+**Mirrors:** SAP TVAPT
+**Granularity:** One row per sales document item category (PSTYV)
+
+Sales order item category reference table. TVAPT contains both the code and the English description in a single table (filtered to SPRAS = 'E'), so no join is required. `billing_type` classifies each item category into Standard, Billing Plan, Milestone, or TBD.
+
+| Column | Type | Description |
+|--------|------|-------------|
+| item_category | STRING | SAP item category code (e.g. ZTAN, ZSER, DLP) |
+| description | STRING | English description from TVAPT |
+| billing_type | STRING | Mirion classification: Standard \| Billing Plan \| Milestone \| TBD |
+
+**SAP source tables:** TVAPT
+
+---
+
+### so_reject_codes
+**Mirrors:** SAP TVAGT
+**Granularity:** One row per rejection reason code (ABGRU)
+
+Sales order rejection reason reference table. TVAGT carries both the code and English description in a single table. `status` classifies each rejection code as Canceled, Closed, or none — used to identify and exclude rejected/canceled lines in sales reporting.
+
+| Column | Type | Description |
+|--------|------|-------------|
+| rejection_code | STRING | SAP rejection reason code (e.g. 08, 20, Z5) |
+| description | STRING | English description from TVAGT |
+| status | STRING | Mirion classification: Canceled \| Closed \| none |
+
+**SAP source tables:** TVAGT
+
+---
+
+### storage_locations
+**Mirrors:** SAP T001L
+**Granularity:** One row per plant + storage location (WERKS + LGORT)
+
+Storage location reference table for NA Tech plants. T001L is the SAP storage location master — one row per plant/storage location combination with a plain-language description. Filtered to plants 4002 (Concord), 4019 (Oak Ridge), 4020 (Meriden), 4021 (Olen), and 4022 (Oxfordshire).
+
+| Column | Type | Description |
+|--------|------|-------------|
+| plant | STRING | Plant code (e.g. 4002, 4019) |
+| storage_location | STRING | Storage location code within the plant; leading zeros removed for numeric codes |
+| description | STRING | Description of the storage location from T001L.LGOBE |
+
+**SAP source tables:** T001L
+
+---
+
+### delivery_blocks
+**Mirrors:** SAP TVLST
+**Granularity:** One row per delivery block code (LIFSP)
+
+Delivery block reference table. A delivery block set on a sales order header (`VBAK.LIFSP`) prevents the order from being processed for shipment. Common blocks include credit holds, customer request holds, and quality checks. This table decodes those codes into plain-language descriptions.
+
+| Column | Type | Description |
+|--------|------|-------------|
+| delivery_block | STRING | SAP delivery block code (e.g. 01, 02, ZD) |
+| description | STRING | English description from TVLST |
+
+**SAP source tables:** TVLST
+
+---
+
+### billing_blocks
+**Mirrors:** SAP TVFST
+**Granularity:** One row per billing block code (FAKSP)
+
+Billing block reference table. A billing block set on a sales order header (`VBAK.FAKSP`) or line item (`VBAP.FAKSP`) prevents invoice creation for the order or item. Common uses include pending approval, disputed pricing, and incomplete documentation. This table decodes those codes into plain-language descriptions.
+
+| Column | Type | Description |
+|--------|------|-------------|
+| billing_block | STRING | SAP billing block code (e.g. 01, 08, ZB) |
+| description | STRING | English description from TVFST |
+
+**SAP source tables:** TVFST
+
+---
+
+### profit_center
+**Mirrors:** SAP CEPC + CEPCT + profit_center_hierarchy
+**Granularity:** One row per active profit center (PRCTR) in BUMN controlling area
+
+Profit center dimension with hierarchy context. CEPC is the authoritative source for all active profit centers — the hierarchy table is left joined to provide site and department groupings where available. The `profit_center_hierarchy` table has variable depth: Meriden and Oak Ridge profit centers sit at level 4 (with a department tier), while RMS, SIS, and Corporate profit centers are leaf nodes at level 3 (no department tier, `level_3_dept` is null). Profit centers absent from the hierarchy altogether will have all level columns null.
+
+| Column | Type | Description |
+|--------|------|-------------|
+| profit_center | STRING | SAP profit center code (e.g. P100520, P103620) |
+| description | STRING | English short text from CEPCT |
+| lock_indicator | STRING | Blank = active; X = locked |
+| level_3_dept | STRING | Department grouping node (null for RMS/SIS/Corporate and hierarchy gaps) |
+| level_3_dept_desc | STRING | Department description |
+| level_2_site | STRING | Site grouping node (e.g. MERIDEN.CY24, OAKRIDGE.CY24, RMS.CY24) |
+| level_2_site_desc | STRING | Site description |
+| level_1_top | STRING | Top-level hierarchy node |
+| level_1_top_desc | STRING | Top-level description |
+
+**SAP source tables:** CEPC, CEPCT, profit_center_hierarchy
+
+---
+
+### cost_center
+**Mirrors:** SAP CSKS + CSKT
+**Granularity:** One row per cost center per validity period (KOSTL + KOKRS + DATBI)
+
+Cost center dimension for all controlling areas in client 400. Filtered to active records only (`DATBI = '9999-12-31'`). CSKT is joined on `KOSTL + KOKRS + DATBI` to avoid cross-product duplicates from date-ranged rows.
+
+Note on `cost_center` field: SAP stores KOSTL as a 10-character padded field. Numeric codes like `0000035123` are stripped to `35123`; alphanumeric codes like `C02010` are kept as-is.
+
+| Column | Type | Description |
+|--------|------|-------------|
+| cost_center | STRING | Cost center code (leading zeros stripped for numeric codes) |
+| description | STRING | English description from CSKT |
+| controlling_area | STRING | Controlling area (e.g. BUMN for NA Tech) |
+| responsible_person | STRING | Person responsible from CSKS.VERAK |
+| department | STRING | Department label from CSKS.ABTEI |
+
+**SAP source tables:** CSKS, CSKT
 
 ---
 
@@ -479,4 +735,4 @@ Vendor on-time delivery by PO schedule line. GR history from EKBE is aggregated 
 | Division decoder | inventory | MARA.SPART needs mapping table |
 | line_creation_date | purchase_order | EKPO.CREATIONDATE unpopulated in extraction |
 | material_reservation count | material_reservation | Row count does not match OR; needs investigation |
-| gr_document_count accuracy | vendor_otd | EKBE may produce multiple BELNR rows per physical receipt when multiple account assignments exist; distinct count may overstate actual GR document count |
+| cumulative match accuracy | vendor_otd | Cumulative qty matching assumes GRs flow in posting-date order; backdated receipts may shift completion event assignment. Validate OTD percentages against ME2M during testing |

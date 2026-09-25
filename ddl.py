@@ -23,6 +23,20 @@
 # MAGIC | vendor_master | — | Vendor address, contact, email, and purchasing org data |
 # MAGIC | material_last_movement | — | Most recent goods movement date per material + plant |
 # MAGIC | vendor_otd | — | Vendor on-time delivery by PO schedule line |
+# MAGIC | material_class | — | Material type + procurement type → Mirion business classification |
+# MAGIC | mirion_customer_numbers | — | Mirion-affiliated customer accounts with standardized site labels |
+# MAGIC | mirion_vendor_numbers | — | Mirion-affiliated vendor accounts with standardized site labels |
+# MAGIC | movement_type | — | SAP movement type codes with plain-language descriptions and breakdown categories |
+# MAGIC | payment_terms | — | SAP payment terms keys with English descriptions |
+# MAGIC | purchasing_groups | — | SAP purchasing group codes and buyer names |
+# MAGIC | so_document_type | — | Sales order document type codes with Mirion order type classification |
+# MAGIC | so_item_category | — | Sales order item category codes with Mirion billing type classification |
+# MAGIC | so_reject_codes | — | Sales order rejection reason codes with Mirion status classification |
+# MAGIC | storage_locations | — | Storage locations per plant with descriptions |
+# MAGIC | delivery_blocks | — | Sales order delivery block codes with descriptions |
+# MAGIC | billing_blocks | — | Sales order billing block codes with descriptions |
+# MAGIC | profit_center | — | Profit center codes with hierarchy context (site, department, top-level rollup) |
+# MAGIC | cost_center | — | Cost center codes with controlling area, validity dates, responsible person, and department |
 # MAGIC
 # MAGIC > **Note on surrogate keys:** Each table defines a `GENERATED ALWAYS AS IDENTITY` surrogate key.
 # MAGIC > These are preserved when loading via `INSERT INTO`. Notebooks that use `saveAsTable("overwrite")`
@@ -435,14 +449,231 @@
 # MAGIC     scheduled_delivery_date         STRING          COMMENT 'Requested delivery date for this schedule line (EKET.EINDT, format YYYYMMDD)',
 # MAGIC     statistics_delivery_date        STRING          COMMENT 'Statistical delivery date for reporting (EKET.SLFDT, format YYYYMMDD)',
 # MAGIC     scheduled_quantity              DECIMAL(18,3)   COMMENT 'Quantity expected on this delivery schedule line (EKET.MENGE)',
-# MAGIC     total_gr_qty                    DECIMAL(18,3)   COMMENT 'Net goods receipt quantity against this PO item: receipts (SHKZG=S) minus reversals and returns (SHKZG=H). Derived from EKBE where BEWTP=E',
-# MAGIC     open_quantity                   DECIMAL(18,3)   COMMENT 'Quantity still outstanding: scheduled_quantity minus total_gr_qty',
-# MAGIC     first_gr_date                   STRING          COMMENT 'Posting date of the first goods receipt posted against this PO item (format YYYYMMDD). NULL if no GR yet',
-# MAGIC     last_gr_date                    STRING          COMMENT 'Posting date of the most recent goods receipt against this PO item (format YYYYMMDD). NULL if no GR yet',
-# MAGIC     gr_document_count               INT             COMMENT 'Number of distinct GR accounting documents posted against this PO item',
-# MAGIC     delivered_on_time               BOOLEAN         COMMENT 'True = first GR posted on or before scheduled_delivery_date; False = GR was late; NULL = not yet received',
-# MAGIC     days_early_late                 INT             COMMENT 'scheduled_delivery_date minus first_gr_date in calendar days. Positive = delivered early, negative = delivered late, NULL = not yet received',
+# MAGIC     gr_quantity                     DECIMAL(18,3)   COMMENT 'Goods receipt quantity for this schedule line as maintained by SAP (EKET.WEMNG)',
+# MAGIC     open_quantity                   DECIMAL(18,3)   COMMENT 'Quantity still outstanding: scheduled_quantity minus gr_quantity',
+# MAGIC     gr_date                         STRING          COMMENT 'Posting date of the completing GR for this schedule line (EKBE.BUDAT, format YYYYMMDD). The completing GR is the first GR event where cumulative received qty reached or exceeded the cumulative scheduled qty threshold for this PO item. NULL if the schedule line has not yet been fully received',
+# MAGIC     gr_document_number              STRING          COMMENT 'Accounting document number of the completing GR event (EKBE.BELNR). NULL if not yet fully received',
+# MAGIC     delivered_on_time               BOOLEAN         COMMENT 'True = gr_date on or before scheduled_delivery_date; False = GR was late; NULL = not yet fully received',
+# MAGIC     days_early_late                 INT             COMMENT 'scheduled_delivery_date minus gr_date in calendar days. Positive = delivered early, negative = delivered late, NULL = not yet fully received',
 # MAGIC     otd_status                      STRING          COMMENT 'Derived delivery status: On Time | Late | Overdue (no GR and scheduled date has passed) | Open (no GR and scheduled date is in the future)'
 # MAGIC
 # MAGIC )
-# MAGIC COMMENT 'Vendor on-time delivery — one row per PO delivery schedule line (EKET). EKBE GR history is aggregated per PO item and joined to schedule lines for OTD calculation. Standard POs only (doc range 0004xxxxxx). STOs excluded. Source: median_hub_captured.sap.'
+# MAGIC COMMENT 'Vendor on-time delivery — one row per PO delivery schedule line (EKET). EKBE GR events are matched to schedule lines using a cumulative quantity threshold: schedule lines accumulate scheduled qty by due date order; GR events accumulate received qty by posting date order; each schedule line is scored against the GR that first pushed the running total to its threshold (the completion event). Partial deliveries score as Open/Overdue until the line is fully realized. Standard POs only (doc range 0004xxxxxx). STOs excluded. Source: median_hub_captured.sap.'
+
+# COMMAND ----------
+
+# DBTITLE 1,material_class
+# MAGIC %sql
+# MAGIC CREATE TABLE IF NOT EXISTS hub_live_transformed.sap.material_class (
+# MAGIC
+# MAGIC     material_class_id       BIGINT  GENERATED ALWAYS AS IDENTITY   COMMENT 'Surrogate key — system-generated unique identifier for each material type + procurement type combination',
+# MAGIC
+# MAGIC     material_type           STRING  COMMENT 'SAP material type code (MARA.MTART), e.g. ZERT = finished goods / tradable, ZALB = semi-finished, ZROH = raw material',
+# MAGIC     procurement_type        STRING  COMMENT 'SAP procurement type code (MARC.BESKZ): F = external procurement, E = in-house production, X = both, blank = not set',
+# MAGIC     material_class          STRING  COMMENT 'Mirion business classification derived from material type and procurement type: Tradable/Resale | Raw | Semi-FG | FG | Operating/Packing Supplies | Service | Non-Stock Material | Unknown'
+# MAGIC
+# MAGIC )
+# MAGIC COMMENT 'Dimension table mapping SAP material type + procurement type combinations to Mirion business classifications. One row per unique combination. Cross-joined from distinct MTART values in MARA and distinct BESKZ values in MARC. Excludes inactive types ZONT, ZHER, HERS. Source: median_hub_captured.sap.'
+
+# COMMAND ----------
+
+# DBTITLE 1,mirion_customer_numbers
+# MAGIC %sql
+# MAGIC CREATE TABLE IF NOT EXISTS hub_live_transformed.sap.mirion_customer_numbers (
+# MAGIC
+# MAGIC     mirion_customer_numbers_id  BIGINT  GENERATED ALWAYS AS IDENTITY   COMMENT 'Surrogate key — system-generated unique identifier for each Mirion customer account',
+# MAGIC
+# MAGIC     customer_number             STRING  COMMENT 'SAP customer account number (KNA1.KUNNR). Leading zeros stripped for numeric accounts',
+# MAGIC     customer_name               STRING  COMMENT 'Customer name as stored in SAP (KNA1.NAME1)',
+# MAGIC     city                        STRING  COMMENT 'City from the customer master address (KNA1.ORT01)',
+# MAGIC     short_name                  STRING  COMMENT 'Mirion standardized site label derived from a hardcoded KUNNR mapping (e.g. MIRION (MERIDEN)). TBD if KUNNR not in the mapping'
+# MAGIC
+# MAGIC )
+# MAGIC COMMENT 'Dimension table of Mirion-affiliated customer accounts in SAP. Filtered to customers whose name contains Mirion, Canberra, Sun Nuclear, or Capintec; excludes deleted, blocked, BLK3, and French entity accounts. short_name provides a standardized site label for reporting. Source: median_hub_captured.sap (KNA1).'
+
+# COMMAND ----------
+
+# DBTITLE 1,mirion_vendor_numbers
+# MAGIC %sql
+# MAGIC CREATE TABLE IF NOT EXISTS hub_live_transformed.sap.mirion_vendor_numbers (
+# MAGIC
+# MAGIC     mirion_vendor_numbers_id    BIGINT  GENERATED ALWAYS AS IDENTITY   COMMENT 'Surrogate key — system-generated unique identifier for each Mirion vendor account',
+# MAGIC
+# MAGIC     vendor_number               STRING  COMMENT 'SAP vendor account number (LFA1.LIFNR). Leading zeros stripped for numeric accounts; alphanumeric accounts (e.g. V4020, R103998) kept as-is',
+# MAGIC     vendor_name                 STRING  COMMENT 'Vendor name as stored in SAP (LFA1.NAME1)',
+# MAGIC     country                     STRING  COMMENT 'Country key from the vendor master (LFA1.LAND1)',
+# MAGIC     short_name                  STRING  COMMENT 'Mirion standardized site label derived from a hardcoded LIFNR mapping (e.g. MIRION (MERIDEN)). TBD if LIFNR not in the mapping'
+# MAGIC
+# MAGIC )
+# MAGIC COMMENT 'Dimension table of Mirion-affiliated vendor accounts in SAP. Filtered to vendors whose name contains Mirion, Canberra, or Capintec. short_name provides a standardized site label for intercompany reporting. Source: median_hub_captured.sap (LFA1).'
+
+# COMMAND ----------
+
+# DBTITLE 1,movement_type
+# MAGIC %sql
+# MAGIC CREATE TABLE IF NOT EXISTS hub_live_transformed.sap.movement_type (
+# MAGIC
+# MAGIC     movement_type_id        BIGINT  GENERATED ALWAYS AS IDENTITY   COMMENT 'Surrogate key — system-generated unique identifier for each movement type record',
+# MAGIC
+# MAGIC     movement_type           STRING  COMMENT 'SAP movement type code (T156.BWART), e.g. 101 = GR from PO, 261 = GI to production order',
+# MAGIC     sap_description         STRING  COMMENT 'SAP standard description for the movement type in English (T156T.BTEXT)',
+# MAGIC     movement_type_text      STRING  COMMENT 'Mirion plain-language description of the movement type. NULL for movement types not active in NA Tech',
+# MAGIC     breakdown               STRING  COMMENT 'High-level operational category: Goods Receipt | Goods Issue | Transfer | Scrap | Adjustment | Unknown'
+# MAGIC
+# MAGIC )
+# MAGIC COMMENT 'Dimension table of SAP movement types active in NA Tech. Covers goods receipts, goods issues, transfers, scrap, and inventory adjustments. movement_type_text is a Mirion-maintained plain-language description; rows without one are excluded. Source: median_hub_captured.sap (T156, T156T).'
+
+# COMMAND ----------
+
+# DBTITLE 1,payment_terms
+# MAGIC %sql
+# MAGIC CREATE TABLE IF NOT EXISTS hub_live_transformed.sap.payment_terms (
+# MAGIC
+# MAGIC     payment_terms_id    BIGINT  GENERATED ALWAYS AS IDENTITY   COMMENT 'Surrogate key — system-generated unique identifier for each payment terms record',
+# MAGIC
+# MAGIC     payment_terms       STRING  COMMENT 'SAP payment terms key (T052.ZTERM), e.g. N030 = net 30 days, Z001 = immediate payment',
+# MAGIC     description         STRING  COMMENT 'English description of the payment terms (T052U.TEXT1)',
+# MAGIC     baseline_date       STRING  COMMENT 'Baseline date indicator for due date calculation (T052.ZTAG1)'
+# MAGIC
+# MAGIC )
+# MAGIC COMMENT 'Dimension table of SAP payment terms keys and their English descriptions. Used to decode ZTERM on purchase orders, vendor master, and accounts payable documents. Source: median_hub_captured.sap (T052, T052U).'
+
+# COMMAND ----------
+
+# DBTITLE 1,purchasing_groups
+# MAGIC %sql
+# MAGIC CREATE TABLE IF NOT EXISTS hub_live_transformed.sap.purchasing_groups (
+# MAGIC
+# MAGIC     purchasing_groups_id    BIGINT  GENERATED ALWAYS AS IDENTITY   COMMENT 'Surrogate key — system-generated unique identifier for each purchasing group record',
+# MAGIC
+# MAGIC     purchasing_group        STRING  COMMENT 'SAP purchasing group code (T024.EKGRP), e.g. M01, P02. Used to identify the buyer or buyer group responsible for a purchase order',
+# MAGIC     buyer_name              STRING  COMMENT 'Name of the buyer or purchasing group (T024.EKNAM)'
+# MAGIC
+# MAGIC )
+# MAGIC COMMENT 'Dimension table of SAP purchasing groups and their buyer names. Used to decode EKGRP on purchase orders and purchase requisitions. Source: median_hub_captured.sap (T024).'
+
+# COMMAND ----------
+
+# DBTITLE 1,so_document_type
+# MAGIC %sql
+# MAGIC CREATE TABLE IF NOT EXISTS hub_live_transformed.sap.so_document_type (
+# MAGIC
+# MAGIC     so_document_type_id BIGINT  GENERATED ALWAYS AS IDENTITY   COMMENT 'Surrogate key — system-generated unique identifier for each sales document type record',
+# MAGIC
+# MAGIC     sales_doc_type      STRING  COMMENT 'SAP sales document type code (TVAK.AUART), e.g. ZOR = standard order, ZRE = return',
+# MAGIC     description         STRING  COMMENT 'English description of the sales document type (TVAKT.BEZEI)',
+# MAGIC     order_type          STRING  COMMENT 'Mirion business classification: Standard | Inquiry | Consignment | Customer Loan | Quotation | Return | Warranty/Repair | Unused'
+# MAGIC
+# MAGIC )
+# MAGIC COMMENT 'Dimension table of SAP sales document types with Mirion business classifications. Used to decode AUART on sales orders and filter by order category. Source: median_hub_captured.sap (TVAK, TVAKT).'
+
+# COMMAND ----------
+
+# DBTITLE 1,so_item_category
+# MAGIC %sql
+# MAGIC CREATE TABLE IF NOT EXISTS hub_live_transformed.sap.so_item_category (
+# MAGIC
+# MAGIC     so_item_category_id BIGINT  GENERATED ALWAYS AS IDENTITY   COMMENT 'Surrogate key — system-generated unique identifier for each item category record',
+# MAGIC
+# MAGIC     item_category       STRING  COMMENT 'SAP sales document item category code (TVAPT.PSTYV), e.g. ZTAN = standard item, ZSER = service item',
+# MAGIC     description         STRING  COMMENT 'English description of the item category (TVAPT.VTEXT)',
+# MAGIC     billing_type        STRING  COMMENT 'Mirion billing classification: Standard | Billing Plan | Milestone | TBD'
+# MAGIC
+# MAGIC )
+# MAGIC COMMENT 'Dimension table of SAP sales order item categories with Mirion billing type classifications. Used to decode PSTYV on sales order line items and filter by billing behavior. Source: median_hub_captured.sap (TVAPT).'
+
+# COMMAND ----------
+
+# DBTITLE 1,so_reject_codes
+# MAGIC %sql
+# MAGIC CREATE TABLE IF NOT EXISTS hub_live_transformed.sap.so_reject_codes (
+# MAGIC
+# MAGIC     so_reject_codes_id  BIGINT  GENERATED ALWAYS AS IDENTITY   COMMENT 'Surrogate key — system-generated unique identifier for each rejection code record',
+# MAGIC
+# MAGIC     rejection_code      STRING  COMMENT 'SAP sales order rejection reason code (TVAGT.ABGRU), e.g. 08 = customer cancel, Z5 = closed',
+# MAGIC     description         STRING  COMMENT 'English description of the rejection reason (TVAGT.BEZEI)',
+# MAGIC     status              STRING  COMMENT 'Mirion classification: Canceled | Closed | none'
+# MAGIC
+# MAGIC )
+# MAGIC COMMENT 'Dimension table of SAP sales order rejection reason codes with Mirion status classifications. Used to decode ABGRU on sales order line items and identify canceled or closed lines. Source: median_hub_captured.sap (TVAGT).'
+
+# COMMAND ----------
+
+# DBTITLE 1,storage_locations
+# MAGIC %sql
+# MAGIC CREATE TABLE IF NOT EXISTS hub_live_transformed.sap.storage_locations (
+# MAGIC
+# MAGIC     storage_location_id BIGINT  GENERATED ALWAYS AS IDENTITY   COMMENT 'Surrogate key — system-generated unique identifier for each storage location record',
+# MAGIC
+# MAGIC     plant               STRING  COMMENT 'Plant code (T001L.WERKS), e.g. 4002 = Concord, 4019 = Oak Ridge, 4020 = Meriden, 4021 = Olen, 4022 = Oxfordshire',
+# MAGIC     storage_location    STRING  COMMENT 'Storage location code within the plant (T001L.LGORT). Leading zeros removed for numeric codes',
+# MAGIC     description         STRING  COMMENT 'Description of the storage location (T001L.LGOBE)'
+# MAGIC
+# MAGIC )
+# MAGIC COMMENT 'Dimension table of storage locations per NA Tech plant. Used to decode LGORT on inventory and goods movement records. Filtered to plants 4002, 4019, 4020, 4021, 4022. Source: median_hub_captured.sap (T001L).'
+
+# COMMAND ----------
+
+# DBTITLE 1,delivery_blocks
+# MAGIC %sql
+# MAGIC CREATE TABLE IF NOT EXISTS hub_live_transformed.sap.delivery_blocks (
+# MAGIC
+# MAGIC     delivery_block_id   BIGINT  GENERATED ALWAYS AS IDENTITY   COMMENT 'Surrogate key — system-generated unique identifier for each delivery block record',
+# MAGIC
+# MAGIC     delivery_block      STRING  COMMENT 'SAP delivery block code (TVLST.LIFSP). Set on VBAK to prevent shipment processing for the order',
+# MAGIC     description         STRING  COMMENT 'English description of the delivery block (TVLST.VTEXT)'
+# MAGIC
+# MAGIC )
+# MAGIC COMMENT 'Dimension table of SAP delivery block codes with English descriptions. Used to decode LIFSP on sales order headers (VBAK). Source: median_hub_captured.sap (TVLST).'
+
+# COMMAND ----------
+
+# DBTITLE 1,billing_blocks
+# MAGIC %sql
+# MAGIC CREATE TABLE IF NOT EXISTS hub_live_transformed.sap.billing_blocks (
+# MAGIC
+# MAGIC     billing_block_id    BIGINT  GENERATED ALWAYS AS IDENTITY   COMMENT 'Surrogate key — system-generated unique identifier for each billing block record',
+# MAGIC
+# MAGIC     billing_block       STRING  COMMENT 'SAP billing block code (TVFST.FAKSP). Set on VBAK or VBAP to prevent invoice creation',
+# MAGIC     description         STRING  COMMENT 'English description of the billing block (TVFST.VTEXT)'
+# MAGIC
+# MAGIC )
+# MAGIC COMMENT 'Dimension table of SAP billing block codes with English descriptions. Used to decode FAKSP on sales order headers (VBAK) and line items (VBAP). Source: median_hub_captured.sap (TVFST).'
+
+# COMMAND ----------
+
+# DBTITLE 1,profit_center
+# MAGIC %sql
+# MAGIC CREATE TABLE IF NOT EXISTS hub_live_transformed.sap.profit_center (
+# MAGIC
+# MAGIC     profit_center_id        BIGINT  GENERATED ALWAYS AS IDENTITY   COMMENT 'Surrogate key — system-generated unique identifier for each profit center record',
+# MAGIC
+# MAGIC     profit_center           STRING  COMMENT 'SAP profit center code (CEPC.PRCTR), e.g. P100520, P103620. Used on MARC, inventory, and cost object assignments',
+# MAGIC     description             STRING  COMMENT 'English short text from profit center master (CEPCT.KTEXT)',
+# MAGIC     lock_indicator          STRING  COMMENT 'Blank = active; X = locked or inactive (CEPC.LOCK_IND)',
+# MAGIC     level_3_dept            STRING  COMMENT 'Department-level hierarchy node (level 3), e.g. INSTRUMENT.CY24, DETECTORS.CY24. Null for RMS/SIS/Corporate profit centers and those absent from the hierarchy',
+# MAGIC     level_3_dept_desc       STRING  COMMENT 'Description of the level 3 department node',
+# MAGIC     level_2_site            STRING  COMMENT 'Site-level hierarchy node (level 2), e.g. MERIDEN.CY24, OAKRIDGE.CY24, RMS.CY24, SIS.CY24',
+# MAGIC     level_2_site_desc       STRING  COMMENT 'Description of the level 2 site node, e.g. Meriden, Oak Ridge, RMS',
+# MAGIC     level_1_top             STRING  COMMENT 'Top-level hierarchy node (level 1), e.g. CNBI_CY24',
+# MAGIC     level_1_top_desc        STRING  COMMENT 'Description of the top-level hierarchy node'
+# MAGIC
+# MAGIC )
+# MAGIC COMMENT 'Dimension table of SAP profit centers for the BUMN controlling area (NA Tech). Includes hierarchy context (site, department, top rollup) from the profit_center_hierarchy table where available; profit centers absent from the hierarchy have null level columns. Used to decode PRCTR on inventory, material master, and cost object records. Source: median_hub_captured.sap (CEPC, CEPCT, profit_center_hierarchy).'
+
+# COMMAND ----------
+
+# DBTITLE 1,cost_center
+# MAGIC %sql
+# MAGIC CREATE TABLE IF NOT EXISTS hub_live_transformed.sap.cost_center (
+# MAGIC
+# MAGIC     cost_center_id          BIGINT  GENERATED ALWAYS AS IDENTITY   COMMENT 'Surrogate key — system-generated unique identifier for each cost center record',
+# MAGIC
+# MAGIC     cost_center             STRING      COMMENT 'SAP cost center code (CSKS.KOSTL). Leading zeros removed for numeric codes. Alphanumeric codes (e.g. C02010) kept as-is',
+# MAGIC     description             STRING      COMMENT 'English description of the cost center (CSKT.KTEXT)',
+# MAGIC     controlling_area        STRING      COMMENT 'Controlling area the cost center belongs to (CSKS.KOKRS), e.g. BUMN for NA Tech',
+# MAGIC     responsible_person      STRING      COMMENT 'Name of the person responsible for the cost center (CSKS.VERAK)',
+# MAGIC     department              STRING      COMMENT 'Department code and label assigned to the cost center (CSKS.ABTEI), e.g. 07 - FAB, 30 - Direct'
+# MAGIC
+# MAGIC )
+# MAGIC COMMENT 'Dimension table of active SAP cost centers across all controlling areas for client 400. Filtered to DATBI = 9999-12-31 (currently active records only). Used to decode KOSTL on goods movements, purchase orders, and cost object assignments. Source: median_hub_captured.sap (CSKS, CSKT).'
