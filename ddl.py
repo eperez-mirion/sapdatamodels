@@ -376,7 +376,7 @@
 # MAGIC     posting_block               STRING          COMMENT 'Central posting block (LFA1.SPERR): X = all financial postings blocked for this vendor',
 # MAGIC     central_deletion_flag       STRING          COMMENT 'Central deletion flag (LFA1.LOEVM): X = vendor marked for deletion across all company codes',
 # MAGIC     email                       STRING          COMMENT 'Primary email address from SAP address management (ADR6.SMTP_ADDR via LFA1.ADRNR). Default email preferred; NULL if no email on file',
-# MAGIC     purchasing_organization     STRING          COMMENT 'Primary purchasing organization for this vendor (LFM1.EKORG). Where multiple exist the lowest EKORG is used',
+# MAGIC     purchasing_organization     STRING          COMMENT 'Purchasing organization this row applies to (LFM1.EKORG). One row per org the vendor is set up in; vendors not in any org appear once with NULL',
 # MAGIC     payment_terms               STRING          COMMENT 'Payment terms key for purchase orders (LFM1.ZTERM), e.g. N030 = net 30 days',
 # MAGIC     order_currency              STRING          COMMENT 'Default currency for purchase orders to this vendor (LFM1.WAERS)',
 # MAGIC     incoterms                   STRING          COMMENT 'Incoterms code (LFM1.INCO1): EXW, FOB, CIF, DAP, etc.',
@@ -386,4 +386,4 @@
 # MAGIC     purchasing_block            STRING          COMMENT 'Purchasing-organization-level deletion / block flag (LFM1.LOEVM)'
 # MAGIC
 # MAGIC )
-# MAGIC COMMENT 'Vendor master — one row per vendor. Combines LFA1 general data with the primary email from ADR6 and purchasing org data from LFM1 (deduplicated to lowest EKORG per vendor). Source: median_hub_captured.sap.'
+# MAGIC COMMENT 'Vendor master — one row per vendor per purchasing organization. Reflects that each site maintains its own vendor records in LFM1. Vendors not set up in any purchasing org appear once with NULL org fields. Email from ADR6 is deduplicated to the default address per vendor. Source: median_hub_captured.sap.'

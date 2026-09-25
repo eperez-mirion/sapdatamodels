@@ -16,11 +16,11 @@
 # MAGIC   per address using a window function: the default email (FLGDEFAULT = X) is preferred;
 # MAGIC   where multiple defaults or no default exists the lowest SMTP_ADDR is taken.
 # MAGIC   ADR6 uses CLIENT rather than MANDT for the client filter.
-# MAGIC - LFM1 joins on LIFNR (left). LFM1 is deduplicated to one row per vendor using a window
-# MAGIC   function ordered by EKORG ascending — the lowest purchasing organization is treated as
-# MAGIC   the primary. This preserves a flat vendor-level granularity.
+# MAGIC - LFM1 joins on LIFNR (left). Each purchasing organization a vendor is set up in produces
+# MAGIC   a separate row. Vendors not set up in any purchasing org appear once with NULL purchasing
+# MAGIC   org fields. This reflects the fact that each site maintains its own vendor records.
 # MAGIC
-# MAGIC **Granularity:** One row per vendor (LFA1.LIFNR)
+# MAGIC **Granularity:** One row per vendor + purchasing organization (LFA1 × LFM1)
 # MAGIC
 # MAGIC **Output columns:**
 # MAGIC | Column | Source | Description |
@@ -42,7 +42,7 @@
 # MAGIC | posting_block | LFA1.SPERR | Central posting block: X = all postings blocked for this vendor |
 # MAGIC | central_deletion_flag | LFA1.LOEVM | Central deletion flag: X = vendor marked for deletion |
 # MAGIC | email | ADR6.SMTP_ADDR | Primary email address; NULL if no email on file |
-# MAGIC | purchasing_organization | LFM1.EKORG | Primary purchasing organization (lowest EKORG where multiple exist) |
+# MAGIC | purchasing_organization | LFM1.EKORG | Purchasing organization this row applies to — one row per org the vendor is set up in |
 # MAGIC | payment_terms | LFM1.ZTERM | Payment terms key (e.g. N030 = net 30 days) |
 # MAGIC | order_currency | LFM1.WAERS | Default order currency for purchase orders |
 # MAGIC | incoterms | LFM1.INCO1 | Incoterms code (e.g. EXW, FOB, CIF) |
@@ -54,7 +54,6 @@
 # COMMAND ----------
 
 from pyspark.sql import functions as F
-from pyspark.sql import Window
 
 # COMMAND ----------
 
@@ -105,14 +104,10 @@ stg_adr6 = (
 
 # COMMAND ----------
 
-# DBTITLE 1,LFM1: Purchasing Organization Data (deduplicated to primary per vendor)
-lfm1_window = Window.partitionBy("LIFNR").orderBy("EKORG")
-
+# DBTITLE 1,LFM1: Purchasing Organization Data
 stg_lfm1 = (
     spark.table("median_hub_captured.sap.LFM1")
     .filter(F.col("MANDT") == "400")
-    .withColumn("porg_rank", F.row_number().over(lfm1_window))
-    .filter(F.col("porg_rank") == 1)
     .select(
         F.col("LIFNR"),
         F.col("EKORG"),

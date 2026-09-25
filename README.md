@@ -371,9 +371,9 @@ Common movement types: 101 = GR for PO, 261 = GI for production order, 201 = GI 
 ---
 
 ### vendor_master
-**Granularity:** One row per vendor (LFA1.LIFNR)
+**Granularity:** One row per vendor + purchasing organization (LFA1 × LFM1)
 
-Vendor address, contact info, email, and purchasing org data in a single flat table. Replaces both the standalone vendor master and vendor email DS reports. Email is sourced from SAP address management (ADR6) via the address key on LFA1, deduplicated to the default address. Purchasing org data (payment terms, incoterms, currency) from LFM1 is deduplicated to the lowest EKORG per vendor.
+Vendor address, contact info, email, and purchasing org data in a single flat table. Replaces both the standalone vendor master and vendor email DS reports. Each site maintains its own vendor records in LFM1, so a vendor set up across multiple purchasing orgs appears once per org. Vendors not set up in any purchasing org appear once with NULL org fields. Email is sourced from SAP address management (ADR6) via the address key on LFA1, deduplicated to the default address.
 
 | Column | Type | Description |
 |--------|------|-------------|
@@ -394,7 +394,7 @@ Vendor address, contact info, email, and purchasing org data in a single flat ta
 | posting_block | STRING | X = all postings blocked |
 | central_deletion_flag | STRING | X = vendor marked for deletion |
 | email | STRING | Primary email from SAP address management; NULL if none on file |
-| purchasing_organization | STRING | Primary purchasing org (lowest EKORG where multiple exist) |
+| purchasing_organization | STRING | Purchasing org this row applies to — one row per org the vendor is set up in |
 | payment_terms | STRING | Payment terms key (e.g. N030 = net 30) |
 | order_currency | STRING | Default PO currency |
 | incoterms | STRING | Incoterms code (EXW, FOB, CIF, etc.) |
