@@ -479,3 +479,4 @@ Vendor on-time delivery by PO schedule line. GR history from EKBE is aggregated 
 | Division decoder | inventory | MARA.SPART needs mapping table |
 | line_creation_date | purchase_order | EKPO.CREATIONDATE unpopulated in extraction |
 | material_reservation count | material_reservation | Row count does not match OR; needs investigation |
+| gr_document_count accuracy | vendor_otd | EKBE may produce multiple BELNR rows per physical receipt when multiple account assignments exist; distinct count may overstate actual GR document count |
