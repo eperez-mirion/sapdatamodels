@@ -23,6 +23,7 @@
 | [approved_mfg_part_list.py](approved_mfg_part_list.py) | `approved_mfg_part_list` | Stable |
 | [bill_of_materials.py](bill_of_materials.py) | `bill_of_materials` | Stable |
 | [material_details.py](material_details.py) | `material_details` | New — needs testing |
+| [material_usage.py](material_usage.py) | `material_usage` | New — needs testing |
 
 ---
 
@@ -327,6 +328,44 @@ Material master combined with plant planning parameters and valuation data. Cove
 | price_unit | DECIMAL(18,3) | Price unit for valuation prices |
 
 **SAP source tables:** MARC, MARA, MAKT, MBEW
+
+---
+
+### material_usage
+**Mirrors:** SAP MB51
+**Granularity:** One row per material document item (MSEG)
+
+Full goods movement history across all movement types and all dates. No filters are applied beyond client — use `movement_type` and `posting_date` to slice in downstream queries or reports.
+
+Common movement types: 101 = GR for PO, 261 = GI for production order, 201 = GI for cost center, 311/312 = plant-to-plant transfer, 501 = receipt without reference.
+
+| Column | Type | Description |
+|--------|------|-------------|
+| posting_date | STRING | Date posted to inventory and accounting (YYYYMMDD) |
+| document_date | STRING | Date on the source document (YYYYMMDD) |
+| material_document_number | STRING | Material document number |
+| material_document_year | STRING | Fiscal year of the document |
+| material_document_item | STRING | Line item within the document |
+| movement_type | STRING | SAP movement type code |
+| debit_credit_indicator | STRING | S = stock increase, H = stock decrease |
+| material_number | STRING | SAP material number (leading zeros stripped) |
+| material_description | STRING | Material short text in English |
+| material_type | STRING | Material type code (ROH, HALB, FERT, etc.) |
+| material_group | STRING | Material group / commodity code |
+| plant | STRING | Plant where the movement occurred |
+| storage_location | STRING | Storage location |
+| special_stock_indicator | STRING | Blank = standard, E = sales order, Q = project |
+| quantity | DECIMAL(18,3) | Quantity moved |
+| unit_of_measure | STRING | Unit of measure for the quantity |
+| amount_local_currency | DECIMAL(18,2) | Value in company code local currency |
+| order_number | STRING | Production/maintenance/internal order (leading zeros stripped) |
+| purchase_order_number | STRING | Associated PO number (leading zeros stripped) |
+| purchase_order_item | STRING | PO item number (leading zeros stripped) |
+| cost_center | STRING | Cost center charged on goods issue |
+| reservation_number | STRING | Reservation fulfilled by this movement (leading zeros stripped) |
+| created_by | STRING | SAP username who posted the document |
+
+**SAP source tables:** MSEG, MKPF, MAKT, MARA
 
 ---
 

@@ -19,6 +19,7 @@
 # MAGIC | approved_mfg_part_list | — | Approved Manufacturer Parts List |
 # MAGIC | bill_of_materials | — | Multi-level BOM explosion |
 # MAGIC | material_details | — | Material master + plant planning and valuation data |
+# MAGIC | material_usage | — | Full goods movement history (MSEG + MKPF) |
 # MAGIC
 # MAGIC > **Note on surrogate keys:** Each table defines a `GENERATED ALWAYS AS IDENTITY` surrogate key.
 # MAGIC > These are preserved when loading via `INSERT INTO`. Notebooks that use `saveAsTable("overwrite")`
@@ -313,3 +314,38 @@
 # MAGIC
 # MAGIC )
 # MAGIC COMMENT 'Material master and plant planning data — one row per material per plant. Combines MARC plant data with MARA general data, MAKT descriptions, and MBEW valuation. Source: median_hub_captured.sap.'
+
+# COMMAND ----------
+
+# DBTITLE 1,material_usage
+# MAGIC %sql
+# MAGIC CREATE TABLE IF NOT EXISTS hub_live_transformed.sap.material_usage (
+# MAGIC
+# MAGIC     material_usage_id           BIGINT          GENERATED ALWAYS AS IDENTITY   COMMENT 'Surrogate key — system-generated unique identifier for each goods movement line',
+# MAGIC
+# MAGIC     posting_date                STRING          COMMENT 'Date the goods movement was posted to inventory and accounting (MKPF.BUDAT, format YYYYMMDD)',
+# MAGIC     document_date               STRING          COMMENT 'Date on the physical source document, e.g. delivery note or production confirmation (MKPF.BLDAT, format YYYYMMDD)',
+# MAGIC     material_document_number    STRING          COMMENT 'Material document number assigned by SAP when the movement is posted (MSEG.MBLNR)',
+# MAGIC     material_document_year      STRING          COMMENT 'Fiscal year of the material document (MSEG.MJAHR)',
+# MAGIC     material_document_item      STRING          COMMENT 'Line item number within the material document (MSEG.ZEILE)',
+# MAGIC     movement_type               STRING          COMMENT 'SAP movement type code (MSEG.BWART): 101 = GR for PO, 261 = GI for production order, 201 = GI for cost center, 311 = plant transfer, etc.',
+# MAGIC     debit_credit_indicator      STRING          COMMENT 'Stock direction (MSEG.SHKZG): S = stock increase / debit, H = stock decrease / credit',
+# MAGIC     material_number             STRING          COMMENT 'SAP material number (MSEG.MATNR). Leading zeros removed for numeric values',
+# MAGIC     material_description        STRING          COMMENT 'Material short text in English (MAKT.MAKTX, SPRAS = E)',
+# MAGIC     material_type               STRING          COMMENT 'Material type code (MARA.MTART): ROH = raw material, HALB = semi-finished, FERT = finished goods',
+# MAGIC     material_group              STRING          COMMENT 'Material group / commodity code (MARA.MATKL)',
+# MAGIC     plant                       STRING          COMMENT 'Plant where the goods movement occurred (MSEG.WERKS)',
+# MAGIC     storage_location            STRING          COMMENT 'Storage location within the plant (MSEG.LGORT)',
+# MAGIC     special_stock_indicator     STRING          COMMENT 'Special stock type (MSEG.SOBKZ): blank = standard, E = sales order stock, Q = project stock',
+# MAGIC     quantity                    DECIMAL(18,3)   COMMENT 'Quantity moved in the unit of measure of the document line (MSEG.MENGE)',
+# MAGIC     unit_of_measure             STRING          COMMENT 'Unit of measure for the movement quantity (MSEG.MEINS)',
+# MAGIC     amount_local_currency       DECIMAL(18,2)   COMMENT 'Value of the movement in the company code local currency (MSEG.DMBTR)',
+# MAGIC     order_number                STRING          COMMENT 'Production, maintenance, or internal order associated with the movement (MSEG.AUFNR). Leading zeros removed',
+# MAGIC     purchase_order_number       STRING          COMMENT 'Purchase order number associated with a GR movement (MSEG.EBELN). Leading zeros removed',
+# MAGIC     purchase_order_item         STRING          COMMENT 'PO line item number (MSEG.EBELP). Leading zeros removed',
+# MAGIC     cost_center                 STRING          COMMENT 'Cost center charged for a goods issue (MSEG.KOSTL)',
+# MAGIC     reservation_number          STRING          COMMENT 'Reservation number fulfilled by this goods issue (MSEG.RSNUM). Leading zeros removed',
+# MAGIC     created_by                  STRING          COMMENT 'Username of the SAP user who posted the material document (MKPF.USNAM)'
+# MAGIC
+# MAGIC )
+# MAGIC COMMENT 'Full goods movement history — one row per material document line item. No movement type or date filters applied; use movement_type and posting_date to slice. Source: median_hub_captured.sap (MSEG, MKPF, MAKT, MARA).'
