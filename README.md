@@ -24,6 +24,7 @@
 | [bill_of_materials.py](bill_of_materials.py) | `bill_of_materials` | Stable |
 | [material_details.py](material_details.py) | `material_details` | New — needs testing |
 | [material_usage.py](material_usage.py) | `material_usage` | New — needs testing |
+| [vendor_master.py](vendor_master.py) | `vendor_master` | New — needs testing; merges vendor emails (ADR6) |
 
 ---
 
@@ -366,6 +367,43 @@ Common movement types: 101 = GR for PO, 261 = GI for production order, 201 = GI 
 | created_by | STRING | SAP username who posted the document |
 
 **SAP source tables:** MSEG, MKPF, MAKT, MARA
+
+---
+
+### vendor_master
+**Granularity:** One row per vendor (LFA1.LIFNR)
+
+Vendor address, contact info, email, and purchasing org data in a single flat table. Replaces both the standalone vendor master and vendor email DS reports. Email is sourced from SAP address management (ADR6) via the address key on LFA1, deduplicated to the default address. Purchasing org data (payment terms, incoterms, currency) from LFM1 is deduplicated to the lowest EKORG per vendor.
+
+| Column | Type | Description |
+|--------|------|-------------|
+| vendor_account_number | STRING | SAP vendor account number (leading zeros stripped) |
+| vendor_name | STRING | Primary vendor name |
+| vendor_name_2 | STRING | Secondary name line |
+| account_group | STRING | Vendor account group (KTOKK) |
+| industry | STRING | Industry sector key |
+| country | STRING | Country key |
+| region | STRING | Region / state |
+| city | STRING | City |
+| postal_code | STRING | Postal / ZIP code |
+| street_address | STRING | Street and house number |
+| telephone | STRING | Primary telephone |
+| fax | STRING | Fax number |
+| tax_number_1 | STRING | Tax number 1 (e.g. EIN in US) |
+| tax_number_2 | STRING | Tax number 2 (e.g. VAT number) |
+| posting_block | STRING | X = all postings blocked |
+| central_deletion_flag | STRING | X = vendor marked for deletion |
+| email | STRING | Primary email from SAP address management; NULL if none on file |
+| purchasing_organization | STRING | Primary purchasing org (lowest EKORG where multiple exist) |
+| payment_terms | STRING | Payment terms key (e.g. N030 = net 30) |
+| order_currency | STRING | Default PO currency |
+| incoterms | STRING | Incoterms code (EXW, FOB, CIF, etc.) |
+| incoterms_description | STRING | Incoterms location or description |
+| minimum_order_value | DECIMAL(18,2) | Minimum order value in order currency |
+| gr_based_iv_indicator | STRING | X = invoice requires GR before posting |
+| purchasing_block | STRING | Purchasing-org-level block flag |
+
+**SAP source tables:** LFA1, ADR6, LFM1
 
 ---
 

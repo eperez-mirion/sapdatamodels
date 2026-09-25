@@ -20,6 +20,7 @@
 # MAGIC | bill_of_materials | — | Multi-level BOM explosion |
 # MAGIC | material_details | — | Material master + plant planning and valuation data |
 # MAGIC | material_usage | — | Full goods movement history (MSEG + MKPF) |
+# MAGIC | vendor_master | — | Vendor address, contact, email, and purchasing org data |
 # MAGIC
 # MAGIC > **Note on surrogate keys:** Each table defines a `GENERATED ALWAYS AS IDENTITY` surrogate key.
 # MAGIC > These are preserved when loading via `INSERT INTO`. Notebooks that use `saveAsTable("overwrite")`
@@ -349,3 +350,40 @@
 # MAGIC
 # MAGIC )
 # MAGIC COMMENT 'Full goods movement history — one row per material document line item. No movement type or date filters applied; use movement_type and posting_date to slice. Source: median_hub_captured.sap (MSEG, MKPF, MAKT, MARA).'
+
+# COMMAND ----------
+
+# DBTITLE 1,vendor_master
+# MAGIC %sql
+# MAGIC CREATE TABLE IF NOT EXISTS hub_live_transformed.sap.vendor_master (
+# MAGIC
+# MAGIC     vendor_master_id            BIGINT          GENERATED ALWAYS AS IDENTITY   COMMENT 'Surrogate key — system-generated unique identifier for each vendor record',
+# MAGIC
+# MAGIC     vendor_account_number       STRING          COMMENT 'SAP vendor account number (LFA1.LIFNR). Leading zeros removed for numeric values',
+# MAGIC     vendor_name                 STRING          COMMENT 'Primary vendor name line (LFA1.NAME1)',
+# MAGIC     vendor_name_2               STRING          COMMENT 'Secondary vendor name line — continuation or trade name (LFA1.NAME2)',
+# MAGIC     account_group               STRING          COMMENT 'Vendor account group controlling field selection and number range assignment (LFA1.KTOKK)',
+# MAGIC     industry                    STRING          COMMENT 'Industry sector / industry key (LFA1.BRSCH)',
+# MAGIC     country                     STRING          COMMENT 'Country key (LFA1.LAND1)',
+# MAGIC     region                      STRING          COMMENT 'Region or state within the country (LFA1.REGIO)',
+# MAGIC     city                        STRING          COMMENT 'City of the vendor (LFA1.ORT01)',
+# MAGIC     postal_code                 STRING          COMMENT 'Postal / ZIP code (LFA1.PSTLZ)',
+# MAGIC     street_address              STRING          COMMENT 'Street name and house number (LFA1.STRAS)',
+# MAGIC     telephone                   STRING          COMMENT 'Primary telephone number (LFA1.TELF1)',
+# MAGIC     fax                         STRING          COMMENT 'Fax number (LFA1.TELFX)',
+# MAGIC     tax_number_1                STRING          COMMENT 'Tax number 1 — country-specific; typically EIN in the US (LFA1.STCD1)',
+# MAGIC     tax_number_2                STRING          COMMENT 'Tax number 2 — country-specific; typically VAT registration number (LFA1.STCD2)',
+# MAGIC     posting_block               STRING          COMMENT 'Central posting block (LFA1.SPERR): X = all financial postings blocked for this vendor',
+# MAGIC     central_deletion_flag       STRING          COMMENT 'Central deletion flag (LFA1.LOEVM): X = vendor marked for deletion across all company codes',
+# MAGIC     email                       STRING          COMMENT 'Primary email address from SAP address management (ADR6.SMTP_ADDR via LFA1.ADRNR). Default email preferred; NULL if no email on file',
+# MAGIC     purchasing_organization     STRING          COMMENT 'Primary purchasing organization for this vendor (LFM1.EKORG). Where multiple exist the lowest EKORG is used',
+# MAGIC     payment_terms               STRING          COMMENT 'Payment terms key for purchase orders (LFM1.ZTERM), e.g. N030 = net 30 days',
+# MAGIC     order_currency              STRING          COMMENT 'Default currency for purchase orders to this vendor (LFM1.WAERS)',
+# MAGIC     incoterms                   STRING          COMMENT 'Incoterms code (LFM1.INCO1): EXW, FOB, CIF, DAP, etc.',
+# MAGIC     incoterms_description       STRING          COMMENT 'Incoterms location or supplementary description (LFM1.INCO2)',
+# MAGIC     minimum_order_value         DECIMAL(18,2)   COMMENT 'Minimum order value in the order currency (LFM1.MINBW)',
+# MAGIC     gr_based_iv_indicator       STRING          COMMENT 'GR-based invoice verification flag (LFM1.WEBRE): X = invoice posting requires a goods receipt to exist first',
+# MAGIC     purchasing_block            STRING          COMMENT 'Purchasing-organization-level deletion / block flag (LFM1.LOEVM)'
+# MAGIC
+# MAGIC )
+# MAGIC COMMENT 'Vendor master — one row per vendor. Combines LFA1 general data with the primary email from ADR6 and purchasing org data from LFM1 (deduplicated to lowest EKORG per vendor). Source: median_hub_captured.sap.'
