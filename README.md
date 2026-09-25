@@ -25,6 +25,7 @@
 | [material_details.py](material_details.py) | `material_details` | New — needs testing |
 | [material_usage.py](material_usage.py) | `material_usage` | New — needs testing |
 | [vendor_master.py](vendor_master.py) | `vendor_master` | New — needs testing; merges vendor emails (ADR6) |
+| [material_last_movement.py](material_last_movement.py) | `material_last_movement` | New — needs testing |
 
 ---
 
@@ -404,6 +405,29 @@ Vendor address, contact info, email, and purchasing org data in a single flat ta
 | purchasing_block | STRING | Purchasing-org-level block flag |
 
 **SAP source tables:** LFA1, ADR6, LFM1
+
+---
+
+### material_last_movement
+**Granularity:** One row per material + plant (most recent movement only)
+
+Most recent goods movement per material per plant. Useful for slow-moving inventory analysis — join to `inventory` on material_number + plant to flag stock with no recent activity. `days_since_last_movement` is calculated at notebook run time so it stays current on each refresh.
+
+> **Note:** `days_since_last_movement` reflects the age as of the last notebook run, not the current date. Schedule regular refreshes to keep it accurate.
+
+| Column | Type | Description |
+|--------|------|-------------|
+| material_number | STRING | SAP material number (leading zeros stripped) |
+| material_description | STRING | Material short text in English |
+| material_type | STRING | Material type code (ROH, HALB, FERT, etc.) |
+| material_group | STRING | Material group / commodity code |
+| plant | STRING | Plant |
+| last_movement_date | STRING | Posting date of the most recent goods movement (YYYYMMDD) |
+| last_movement_type | STRING | SAP movement type of the last movement |
+| last_document_number | STRING | Material document number of the last movement |
+| days_since_last_movement | INT | Days since last_movement_date as of the last notebook run |
+
+**SAP source tables:** MSEG, MKPF, MAKT, MARA
 
 ---
 

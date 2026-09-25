@@ -21,6 +21,7 @@
 # MAGIC | material_details | — | Material master + plant planning and valuation data |
 # MAGIC | material_usage | — | Full goods movement history (MSEG + MKPF) |
 # MAGIC | vendor_master | — | Vendor address, contact, email, and purchasing org data |
+# MAGIC | material_last_movement | — | Most recent goods movement date per material + plant |
 # MAGIC
 # MAGIC > **Note on surrogate keys:** Each table defines a `GENERATED ALWAYS AS IDENTITY` surrogate key.
 # MAGIC > These are preserved when loading via `INSERT INTO`. Notebooks that use `saveAsTable("overwrite")`
@@ -387,3 +388,24 @@
 # MAGIC
 # MAGIC )
 # MAGIC COMMENT 'Vendor master — one row per vendor per purchasing organization. Reflects that each site maintains its own vendor records in LFM1. Vendors not set up in any purchasing org appear once with NULL org fields. Email from ADR6 is deduplicated to the default address per vendor. Source: median_hub_captured.sap.'
+
+# COMMAND ----------
+
+# DBTITLE 1,material_last_movement
+# MAGIC %sql
+# MAGIC CREATE TABLE IF NOT EXISTS hub_live_transformed.sap.material_last_movement (
+# MAGIC
+# MAGIC     material_last_movement_id   BIGINT          GENERATED ALWAYS AS IDENTITY   COMMENT 'Surrogate key — system-generated unique identifier for each material + plant record',
+# MAGIC
+# MAGIC     material_number             STRING          COMMENT 'SAP material number (MSEG.MATNR). Leading zeros removed for numeric values',
+# MAGIC     material_description        STRING          COMMENT 'Material short text in English (MAKT.MAKTX, SPRAS = E)',
+# MAGIC     material_type               STRING          COMMENT 'Material type code (MARA.MTART): ROH = raw material, HALB = semi-finished, FERT = finished goods',
+# MAGIC     material_group              STRING          COMMENT 'Material group / commodity code (MARA.MATKL)',
+# MAGIC     plant                       STRING          COMMENT 'Plant where the last goods movement was posted (MSEG.WERKS)',
+# MAGIC     last_movement_date          STRING          COMMENT 'Posting date of the most recent goods movement for this material at this plant (MKPF.BUDAT, format YYYYMMDD)',
+# MAGIC     last_movement_type          STRING          COMMENT 'SAP movement type of the most recent goods movement (MSEG.BWART)',
+# MAGIC     last_document_number        STRING          COMMENT 'Material document number of the most recent goods movement (MSEG.MBLNR)',
+# MAGIC     days_since_last_movement    INT             COMMENT 'Calendar days elapsed between last_movement_date and the date this table was last refreshed. Useful for slow-moving inventory analysis'
+# MAGIC
+# MAGIC )
+# MAGIC COMMENT 'Most recent goods movement per material per plant — one row per MATNR + WERKS combination. Derived from MSEG + MKPF using a window function. days_since_last_movement reflects the age of the last activity as of the last notebook run. Source: median_hub_captured.sap.'
